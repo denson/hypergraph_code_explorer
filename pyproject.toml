@@ -1,0 +1,38 @@
+[project]
+name = "hypergraph-code-explorer"
+version = "0.1.0"
+description = "Hypergraph-based code exploration with edge-intersection traversal, exposed as an MCP server"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.46.0",
+    "python-dotenv>=1.0.0",
+    "hypernetx>=2.4.0",
+    "networkx>=3.0",
+    "numpy>=1.26.0",
+    "sentence-transformers>=3.0.0",
+    "markitdown[all]>=0.1.0",
+    "pydantic>=2.0.0",
+    "instructor>=1.0.0",
+    "langchain-text-splitters>=0.3.0",
+    "mcp>=1.0.0",
+]
+
+[project.scripts]
+hce = "hypergraph_code_explorer.cli:main"
+hce-server = "hypergraph_code_explorer.mcp_server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hypergraph_code_explorer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

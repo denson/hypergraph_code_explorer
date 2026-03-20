@@ -1,0 +1,62 @@
+---
+description: How to use the Hypergraph Code Explorer MCP tools for code understanding
+globs:
+alwaysApply: true
+---
+
+# Hypergraph Code Explorer — Agent Guide
+
+You have access to 8 MCP tools that explore a codebase as a hypergraph — a graph where edges connect N entities at once (not just pairs). The key differentiator is **edge-intersection traversal**: two edges are connected when they share member nodes, and those shared nodes explain *why* they are connected.
+
+## Three-Stage Retrieval Loop
+
+### Stage 1 — RETRIEVE
+Call `hypergraph_retrieve(query, top_k=20)`.
+Read the retrieval summary:
+- `coverage_score`: below 0.5 means significant gaps likely
+- `retrieval_source_breakdown`: how many edges were found directly (seed) vs by traversal (intersection)
+- Check `traversal_paths` for reasoning chains
+
+### Stage 2 — EVALUATE (conditional)
+If `coverage_score < 0.5` OR a frontier node has `incident_edge_count > 5`:
+1. Call `hypergraph_coverage(retrieved_edge_ids, seed_node_ids)`
+2. Identify the 1-2 most important uncovered frontier nodes
+3. Call `hypergraph_retrieve(suggested_query)` for each
+
+Otherwise: proceed to Stage 3.
+
+### Stage 3 — SYNTHESISE
+- Read `traversal_paths` to understand WHY pieces of evidence are connected
+- The `intersection_nodes` between edges are conceptual bridges — mention them
+- Use confidence tiers: HIGH (≥0.7), MED (0.4-0.7), LOW (<0.4)
+- Seed edges are directly matched; intersection edges were discovered by traversal
+
+## Working with SUMMARY Edges
+
+SUMMARY edges appear alongside structural edges in retrieve results (`edge_type: "SUMMARY"`).
+
+When SUMMARY edges appear:
+- Read them first for high-level orientation before structural edges
+- They tell you what a file DOES, not precise call chains
+- If a broad query returns mostly SUMMARYs, extract key entity names and issue targeted follow-up queries
+
+When no SUMMARY edges appear:
+- The query is precise enough that structural edges answered it directly — good
+
+## Tool Reference
+
+1. **hypergraph_retrieve** — Main retrieval with traversal paths
+2. **hypergraph_find_path** — Edge-BFS between two entities (returns intersection explanations)
+3. **hypergraph_neighbors** — Edge-intersection neighbourhood of a node
+4. **hypergraph_coverage** — Agent self-evaluation (no LLM, cheap, call speculatively)
+5. **hypergraph_summarize** — Generate summaries (build-time only)
+6. **hypergraph_stats** — Graph statistics
+7. **hypergraph_list_nodes** — All nodes with degree info
+8. **hypergraph_list_edges** — All edges with metadata
+
+## Tips
+- `hypergraph_coverage` is O(retrieved_edges) — call it when in doubt
+- `hypergraph_find_path` returns edge-level paths, not just node lists
+- For "how does X work?" questions: retrieve → follow traversal paths → synthesise
+- For "how are X and Y connected?" questions: use `hypergraph_find_path`
+- For "what does this file do?" questions: check for SUMMARY edges first

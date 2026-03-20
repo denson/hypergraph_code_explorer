@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "hypergraph-code-explorer": {
+      "command": "hce-server",
+      "args": [],
+      "env": {}
+    }
+  }
+}
