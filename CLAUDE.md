@@ -22,7 +22,7 @@ Carry forward with modifications:
 - `ingestion/chunker.py` → carry forward, AST-boundary splitting works well
 - `extraction/code_extractor.py` → carry forward, but populate `sources` and `targets` (directed) instead of flat `nodes` set. Source = subject entity (caller, importer, definer), target = object entity (callee, imported module, defined members)
 - `extraction/text_extractor.py` → carry forward, same directional change. Remember: TEXT edges are OPT-IN (disabled by default)
-- `graph/embeddings.py` → carry forward, CodeBERT (`microsoft/codebert-base`) via sentence-transformers. No `trust_remote_code`, no task prefixes
+- `graph/embeddings.py` → rewrite. Switched from CodeBERT to `all-MiniLM-L6-v2` (384-dim, trained for STS). CodeBERT's mean-pooling on short identifiers produced degenerate embeddings. Node names are embedded with source-file context prepended (e.g. `"sessions.py: Session.send"`)
 - `graph/builder.py` → heavily rewrite. v1 had implicit inverted index; v2 needs explicit `_node_to_edges: dict[str, set[str]]` maintained at insert time
 - `mcp_server.py` → rewrite for 8 tools (v1 had 6). Use FastMCP
 - `pipeline.py` → rewrite for file-hash caching and summary generation step
@@ -55,7 +55,7 @@ Implement these exactly:
 | Summary model | Haiku default, Sonnet via `--model` flag | File-level only, directory roll-ups deferred |
 | SUMMARY type_weight | 0.3 | Below structural edges (AST=1.0, TEXT=0.7) |
 | Coverage check trigger | `coverage_score < 0.5` OR `frontier node incident_edge_count > 5` | |
-| Embeddings | CodeBERT `microsoft/codebert-base` | 768-dim, sentence-transformers, no trust_remote_code |
+| Embeddings | `all-MiniLM-L6-v2` | 384-dim, trained for STS. Replaced CodeBERT (degenerate embeddings on short identifiers). Context-prefixed node names |
 
 ## Project Structure
 
@@ -211,7 +211,7 @@ Adapt from v1. Uses Claude (via anthropic + instructor) to extract semantic rela
 **IMPORTANT**: This is OPT-IN. Guard with a config flag. Do not run by default.
 
 **Step 7: `graph/embeddings.py`**
-Adapt from v1. CodeBERT (`microsoft/codebert-base`) via sentence-transformers.
+Rewritten. Uses `all-MiniLM-L6-v2` via sentence-transformers (replaced CodeBERT — see Key Decisions).
 - `embed_nodes(nodes: list[str]) -> np.ndarray` — batch embed node names
 - `embed_query(query: str) -> np.ndarray` — embed a single query string
 - `cosine_similarity(a, b) -> float`

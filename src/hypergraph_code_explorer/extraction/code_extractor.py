@@ -4,6 +4,10 @@ Code Hyperedge Extractor
 Uses Python's ast module to extract precise, structured hyperedges from code.
 Zero LLM cost. Produces directed edges with sources and targets.
 
+IMPORTANT: Python files are extracted per-file (not per-chunk) to ensure
+correct DEFINES edges and proper class-qualified names. Edges are then
+associated back to their originating chunks by line range.
+
 Edge types: CALLS, IMPORTS, DEFINES, INHERITS, SIGNATURE, RAISES, DECORATES.
 """
 
@@ -11,6 +15,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections import defaultdict
 from hashlib import md5
 from pathlib import Path
 
@@ -25,11 +30,10 @@ from ..models import EdgeType, HyperedgeRecord
 class _PythonHyperedgeVisitor(ast.NodeVisitor):
     """Walks a Python AST and emits HyperedgeRecord objects with directed sources/targets."""
 
-    def __init__(self, module_name: str, chunk_id: str, source_path: str, chunk_text: str):
+    def __init__(self, module_name: str, source_path: str, source_text: str):
         self.module_name = module_name
-        self.chunk_id = chunk_id
         self.source_path = source_path
-        self.chunk_text = chunk_text
+        self.source_text = source_text
         self.edges: list[HyperedgeRecord] = []
         self._current_class: str | None = None
         self._current_func: str | None = None
@@ -37,16 +41,17 @@ class _PythonHyperedgeVisitor(ast.NodeVisitor):
 
     def _make_edge_id(self, edge_type: str, key: str) -> str:
         self._edge_counter += 1
-        raw = f"{edge_type}_{key}_{self.chunk_id[:8]}_{self._edge_counter}"
+        raw = f"{edge_type}_{key}_{self.source_path}_{self._edge_counter}"
         return md5(raw.encode()).hexdigest()[:16]
 
     def _make_edge(
         self, sources: list[str], targets: list[str],
-        relation: str, edge_type: str, **meta,
+        relation: str, edge_type: str, line: int = 0, **meta,
     ) -> HyperedgeRecord:
         sources = [s for s in sources if s]
         targets = [t for t in targets if t]
         eid = self._make_edge_id(edge_type, relation[:30])
+        meta["line"] = line
         return HyperedgeRecord(
             edge_id=eid,
             relation=relation,
@@ -54,8 +59,8 @@ class _PythonHyperedgeVisitor(ast.NodeVisitor):
             sources=sources,
             targets=targets,
             source_path=self.source_path,
-            chunk_id=self.chunk_id,
-            chunk_text=self.chunk_text,
+            chunk_id="",  # filled in later by _associate_chunks
+            chunk_text="",  # filled in later
             metadata=meta,
         )
 
@@ -238,22 +243,179 @@ class _PythonHyperedgeVisitor(ast.NodeVisitor):
 # ---------------------------------------------------------------------------
 
 class CodeHyperedgeExtractor:
-    """Extracts hyperedges from code chunks using AST analysis."""
+    """
+    Extracts hyperedges from code chunks using AST analysis.
+
+    For Python files, extraction runs once on the FULL file source to ensure
+    correct class qualification and complete DEFINES edges. Edges are then
+    associated back to their originating chunks by line range.
+    """
 
     def extract(self, chunk: Chunk) -> list[HyperedgeRecord]:
+        """Extract from a single chunk (used for non-Python or single-chunk files)."""
         if chunk.file_type == "py":
-            return self._extract_python(chunk)
+            return self._extract_python_chunk(chunk)
         else:
             return self._extract_generic_code(chunk)
 
     def extract_all(self, chunks: list[Chunk]) -> list[HyperedgeRecord]:
+        """
+        Extract from all code chunks. Groups Python chunks by file and
+        extracts per-file to get correct DEFINES and qualification.
+        """
         edges: list[HyperedgeRecord] = []
+
+        # Group Python chunks by source file
+        py_chunks_by_file: dict[str, list[Chunk]] = defaultdict(list)
+        other_chunks: list[Chunk] = []
+
         for chunk in chunks:
-            if chunk.is_code:
-                edges.extend(self.extract(chunk))
+            if not chunk.is_code:
+                continue
+            if chunk.file_type == "py":
+                py_chunks_by_file[chunk.source_path].append(chunk)
+            else:
+                other_chunks.append(chunk)
+
+        # Extract Python files: use full-file source from the largest chunk
+        for source_path, file_chunks in py_chunks_by_file.items():
+            file_edges = self._extract_python_file(source_path, file_chunks)
+            edges.extend(file_edges)
+
+        # Extract non-Python chunks individually
+        for chunk in other_chunks:
+            edges.extend(self._extract_generic_code(chunk))
+
         return edges
 
-    def _extract_python(self, chunk: Chunk) -> list[HyperedgeRecord]:
+    def _extract_python_file(
+        self, source_path: str, chunks: list[Chunk],
+    ) -> list[HyperedgeRecord]:
+        """
+        Extract edges from a Python file using the full source.
+        The full source is reconstructed from chunks, with the largest chunk
+        (typically the whole-class or whole-file chunk) used as the primary source.
+        """
+        module_name = Path(source_path).stem
+
+        # Find the full file source: use the largest chunk or concatenate
+        # The chunker produces whole-class chunks that contain all methods,
+        # plus individual method chunks. The whole-file source gives us
+        # correct class context for all methods.
+        full_source = self._reconstruct_file_source(source_path, chunks)
+
+        try:
+            tree = ast.parse(full_source)
+        except SyntaxError:
+            # Fall back to per-chunk extraction
+            edges: list[HyperedgeRecord] = []
+            for chunk in chunks:
+                edges.extend(self._extract_python_chunk(chunk))
+            return edges
+
+        # Run visitor on full file AST — correct class qualification
+        visitor = _PythonHyperedgeVisitor(
+            module_name=module_name,
+            source_path=source_path,
+            source_text=full_source,
+        )
+        visitor.visit(tree)
+
+        # Module-level DEFINES edge (one per file, listing ALL top-level symbols)
+        top_level_names = []
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                top_level_names.append(f"{module_name}.{node.name}")
+            elif isinstance(node, ast.ClassDef):
+                top_level_names.append(f"{module_name}.{node.name}")
+        if top_level_names:
+            eid = md5(f"DEFINES_{module_name}_{source_path}".encode()).hexdigest()[:16]
+            visitor.edges.insert(0, HyperedgeRecord(
+                edge_id=eid,
+                relation=f"module {module_name} defines: {', '.join(n.split('.')[-1] for n in top_level_names)}",
+                edge_type=EdgeType.DEFINES,
+                sources=[module_name],
+                targets=top_level_names,
+                source_path=source_path,
+                chunk_id="",
+                chunk_text="",
+            ))
+
+        # Associate edges back to chunks by line number
+        self._associate_chunks(visitor.edges, chunks)
+
+        return visitor.edges
+
+    def _reconstruct_file_source(
+        self, source_path: str, chunks: list[Chunk],
+    ) -> str:
+        """
+        Get the full file source. Try reading from disk first;
+        fall back to concatenating non-overlapping chunks.
+        """
+        try:
+            return Path(source_path).read_text(encoding="utf-8", errors="replace")
+        except (FileNotFoundError, OSError):
+            pass
+
+        if not chunks:
+            return ""
+
+        # Fall back: concatenate non-overlapping chunks (module, class, function
+        # level — skip method chunks since they're contained in class chunks).
+        # Sort by start_line to maintain order.
+        top_chunks = [
+            c for c in chunks
+            if c.symbol_type in ("module", "class", "function", None)
+        ]
+        if not top_chunks:
+            top_chunks = chunks
+
+        top_chunks.sort(key=lambda c: c.start_line or 0)
+        return "\n\n".join(c.text for c in top_chunks)
+
+    def _associate_chunks(
+        self, edges: list[HyperedgeRecord], chunks: list[Chunk],
+    ) -> None:
+        """Associate each edge with the best-matching chunk by line number."""
+        if not chunks:
+            return
+
+        # Build line-range index for chunks
+        chunk_ranges: list[tuple[int, int, Chunk]] = []
+        for chunk in chunks:
+            start = chunk.start_line or 1
+            end = chunk.end_line or 999999
+            chunk_ranges.append((start, end, chunk))
+
+        # Default chunk for edges without line info
+        default_chunk = chunks[0]
+
+        for edge in edges:
+            line = edge.metadata.get("line", 0)
+            if line > 0:
+                # Find the most specific (smallest) chunk containing this line
+                best_chunk = default_chunk
+                best_size = float("inf")
+                for start, end, chunk in chunk_ranges:
+                    if start <= line <= end:
+                        size = end - start
+                        if size < best_size:
+                            best_size = size
+                            best_chunk = chunk
+                edge.chunk_id = best_chunk.chunk_id
+                edge.chunk_text = best_chunk.text
+            else:
+                edge.chunk_id = default_chunk.chunk_id
+                edge.chunk_text = default_chunk.text
+
+    def _extract_python_chunk(self, chunk: Chunk) -> list[HyperedgeRecord]:
+        """
+        Extract from a single Python chunk. Used as fallback when full-file
+        extraction fails, or for single-chunk scenarios (e.g., tests).
+
+        Uses chunk.symbol_name to restore class context for method chunks.
+        """
         source_path = chunk.source_path
         module_name = Path(source_path).stem
 
@@ -264,13 +426,23 @@ class CodeHyperedgeExtractor:
 
         visitor = _PythonHyperedgeVisitor(
             module_name=module_name,
-            chunk_id=chunk.chunk_id,
             source_path=source_path,
-            chunk_text=chunk.text,
+            source_text=chunk.text,
         )
+
+        # Restore class context for method chunks
+        if chunk.symbol_type == "method" and chunk.symbol_name and "." in chunk.symbol_name:
+            class_name = chunk.symbol_name.rsplit(".", 1)[0]
+            visitor._current_class = f"{module_name}.{class_name}"
+
         visitor.visit(tree)
 
-        # Module-level DEFINES edge
+        # Set chunk info on all edges
+        for edge in visitor.edges:
+            edge.chunk_id = chunk.chunk_id
+            edge.chunk_text = chunk.text
+
+        # Module-level DEFINES edge (limited to this chunk)
         top_level_names = []
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):

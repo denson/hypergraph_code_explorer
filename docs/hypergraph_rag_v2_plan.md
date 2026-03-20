@@ -14,7 +14,7 @@ These components proved their value and carry forward largely unchanged:
 
 - **AST-based code extraction** — zero-cost, zero-hallucination structural facts (CALLS, IMPORTS, DEFINES, INHERITS, SIGNATURE, RAISES, DECORATES). This is the strongest part of v1.
 - **HyperNetX** as the hypergraph data structure — handles N-ary edges, incidence dicts, subgraph restriction, union operations.
-- **CodeBERT embeddings** (`microsoft/codebert-base`) — code-aware, 768-dim, works with sentence-transformers, no special prefixes.
+- **Sentence-transformer embeddings** (`all-MiniLM-L6-v2`) — 384-dim, trained for semantic similarity. Replaced all-MiniLM-L6-v2 after testing showed that all-MiniLM-L6-v2's mean-pooling on short identifiers produces degenerate embeddings (mean pairwise similarity ~0.95, causing 91% node merging). MiniLM is 6× smaller, faster, and actually trained for the similarity task we need. Node names are embedded with source-file context prepended (e.g. `"sessions.py: Session.send"`) to disambiguate short identifiers.
 - **markitdown** for document conversion — handles PDFs, pptx, xlsx, docstrings.
 - **Content-aware chunking** — AST-boundary splitting for code, heading/paragraph splitting for docs.
 - **MCP server architecture** — tools do retrieval, the consuming agent does reasoning.
@@ -309,7 +309,7 @@ HyperedgeRecord(
 )
 ```
 
-4. **Embed normally** — the summary text gets embedded via CodeBERT alongside everything else. Because summaries mention the key entity names from the file, they naturally appear in retrieval results for broad queries.
+4. **Embed normally** — the summary text gets embedded via all-MiniLM-L6-v2 alongside everything else. Because summaries mention the key entity names from the file, they naturally appear in retrieval results for broad queries.
 
 5. **Optional: directory-level roll-ups** — for large codebases, generate a second tier by feeding file-level summaries from the same directory into a roll-up prompt. Store as `summary_level: "directory"`. This gives a two-level hierarchy (file → directory) without the full Leiden clustering machinery.
 
@@ -376,7 +376,7 @@ hypergraph-rag-v2/
 │       │   └── text_extractor.py    # Claude + instructor: S-V-O and semantic groups
 │       ├── graph/
 │       │   ├── builder.py           # HypergraphBuilder: incidence + inverted index + edge store
-│       │   ├── embeddings.py        # CodeBERT via sentence-transformers
+│       │   ├── embeddings.py        # all-MiniLM-L6-v2 via sentence-transformers
 │       │   ├── simplify.py          # node merging by embedding similarity (from MIT code)
 │       │   └── summaries.py         # module-level summary generation + SUMMARY edge creation  ← NEW
 │       ├── retrieval/
@@ -615,7 +615,7 @@ When no SUMMARY edges appear:
 4. `ingestion/chunker.py` — carry forward from v1
 5. `extraction/code_extractor.py` — carry forward from v1, populate directed source/target
 6. `extraction/text_extractor.py` — carry forward from v1, populate directed source/target
-7. `graph/embeddings.py` — CodeBERT, carry forward from v1
+7. `graph/embeddings.py` — all-MiniLM-L6-v2, carry forward from v1
 
 ### Phase 2 — The retrieval core (the hard part)
 8. `retrieval/intersection.py` — additive seed scoring + intersection expansion + traversal path construction
@@ -685,7 +685,7 @@ Dropped from v1: `einops` (nomic-specific), `fastjsonschema` (unused), `pandas` 
 
 - **Text extraction for code-only corpora** — Opt-in. TEXT edges disabled by default for code repositories. Only generated when explicitly enabled via a config flag (`text_edges: true`). Keeps the pipeline simpler and avoids noisy LLM-extracted edges for pure code repos.
 
-- **Node simplification threshold** — Start at 0.97 cosine similarity for CodeBERT. Code identifiers are more precise than natural language; MIT's 0.90 would merge distinct names like `send` and `send_request`. Lower empirically in Phase 5 if too conservative.
+- **Node simplification threshold** — Start at 0.97 cosine similarity. With all-MiniLM-L6-v2 (which produces well-separated embeddings for short identifiers), this threshold prevents merging distinct names like `send` and `send_request`. Context-prefixed node names (e.g. `"sessions.py: Session.send"`) further improve separation. Transitive merge chains are broken — only directly similar pairs merge.
 
 - **Summary generation model** — Default to Haiku (fast, ~$0.01 per 100 files). Expose a `--model` flag on `hypergraph_summarize` for users who want Sonnet quality. Summaries can be regenerated cheaply if the model choice needs revisiting.
 

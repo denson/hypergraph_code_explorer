@@ -152,3 +152,105 @@ def test_extract_signature_edge():
     assert len(helper_sig) == 1
     assert "int" in helper_sig[0].targets
     assert "str" in helper_sig[0].targets
+
+
+# ---------------------------------------------------------------------------
+# Tests for per-file extraction (extract_all) — the DEFINES fix
+# ---------------------------------------------------------------------------
+
+_MULTI_CLASS_FILE = '''
+import os
+
+class Session:
+    """HTTP session."""
+
+    def send(self, request):
+        return self.adapter.send(request)
+
+    def get(self, url):
+        return self.send(url)
+
+class HTTPAdapter:
+    """HTTP adapter."""
+
+    def send(self, request):
+        return request
+
+    def close(self):
+        pass
+
+def standalone_func():
+    pass
+'''
+
+
+def test_extract_all_produces_class_defines():
+    """extract_all on a multi-class file should produce DEFINES for each class."""
+    from hypergraph_code_explorer.ingestion.chunker import chunk_python_source
+
+    chunks = chunk_python_source(_MULTI_CLASS_FILE, "sessions.py")
+    extractor = CodeHyperedgeExtractor()
+    edges = extractor.extract_all(chunks)
+
+    defines = [e for e in edges if e.edge_type == "DEFINES"]
+
+    # Should have: module defines [Session, HTTPAdapter, standalone_func],
+    # Session defines [send, get], HTTPAdapter defines [send, close]
+    assert len(defines) >= 3, f"Expected >=3 DEFINES edges, got {len(defines)}: {[e.relation for e in defines]}"
+
+    # Class-level DEFINES: sessions.Session should define its methods
+    session_defines = [e for e in defines if any("sessions.Session" == s for s in e.sources)]
+    assert len(session_defines) >= 1, "Missing Session class-level DEFINES edge"
+
+    # Verify methods are correctly qualified with class name
+    for e in session_defines:
+        for t in e.targets:
+            assert "Session." in t, f"Method target {t} should be qualified with Session"
+
+    # HTTPAdapter should define its methods
+    adapter_defines = [e for e in defines if any("sessions.HTTPAdapter" == s for s in e.sources)]
+    assert len(adapter_defines) >= 1, "Missing HTTPAdapter class-level DEFINES edge"
+
+
+def test_extract_all_correct_class_qualification():
+    """Methods extracted via extract_all should be qualified as Class.method, not module.method."""
+    from hypergraph_code_explorer.ingestion.chunker import chunk_python_source
+
+    chunks = chunk_python_source(_MULTI_CLASS_FILE, "sessions.py")
+    extractor = CodeHyperedgeExtractor()
+    edges = extractor.extract_all(chunks)
+
+    calls = [e for e in edges if e.edge_type == "CALLS"]
+
+    # Session.send should be a source, not sessions.send
+    all_sources = [s for e in calls for s in e.sources]
+    session_send_sources = [s for s in all_sources if "send" in s and "Session" in s]
+    module_send_sources = [s for s in all_sources if s == "sessions.send"]
+
+    assert len(session_send_sources) > 0, "Session.send should appear as a CALLS source"
+    # There should be no misqualified 'sessions.send' (without class prefix)
+    assert len(module_send_sources) == 0, \
+        f"Found misqualified 'sessions.send' sources — methods should be Class.method"
+
+
+def test_extract_all_module_defines_lists_all_symbols():
+    """Module-level DEFINES edge should list ALL top-level symbols, not just one per chunk."""
+    from hypergraph_code_explorer.ingestion.chunker import chunk_python_source
+
+    chunks = chunk_python_source(_MULTI_CLASS_FILE, "sessions.py")
+    extractor = CodeHyperedgeExtractor()
+    edges = extractor.extract_all(chunks)
+
+    defines = [e for e in edges if e.edge_type == "DEFINES"]
+    module_defines = [e for e in defines if e.sources == ["sessions"]]
+
+    assert len(module_defines) >= 1, "Should have at least one module-level DEFINES edge"
+
+    # The module DEFINES edge should list Session, HTTPAdapter, and standalone_func
+    all_targets = set()
+    for e in module_defines:
+        all_targets.update(e.targets)
+
+    assert any("Session" in t for t in all_targets), "Module DEFINES should include Session"
+    assert any("HTTPAdapter" in t for t in all_targets), "Module DEFINES should include HTTPAdapter"
+    assert any("standalone_func" in t for t in all_targets), "Module DEFINES should include standalone_func"

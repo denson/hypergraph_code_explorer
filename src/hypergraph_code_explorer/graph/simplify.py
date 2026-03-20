@@ -6,6 +6,10 @@ Merge lower-degree into higher-degree. Update incidence dict, edge store,
 inverted index, and embeddings in one pass.
 
 Default threshold: 0.97 (higher than MIT's 0.90; code identifiers are precise).
+
+IMPORTANT: No transitive merge chains. Every node in a merge cluster must be
+directly above threshold with the keeper node. This prevents cascading merges
+where A→B→C→D collapses nodes that aren't actually similar.
 """
 
 from __future__ import annotations
@@ -24,6 +28,9 @@ def simplify_graph(
 ) -> dict[str, str]:
     """
     Merge near-duplicate nodes in the hypergraph.
+
+    Uses direct-similarity-only merging: each merged node must be above
+    threshold with the keeper node directly, not transitively.
 
     Args:
         builder: The hypergraph builder (modified in place)
@@ -47,6 +54,9 @@ def simplify_graph(
     vecs = np.stack([embeddings.get(n) for n in embedded_nodes])
     sim_matrix = vecs @ vecs.T  # already normalised
 
+    # Build node index for fast lookup
+    node_to_idx = {n: i for i, n in enumerate(embedded_nodes)}
+
     # Find merge pairs from upper triangle
     merge_pairs: list[tuple[str, str, float]] = []
     for i in range(len(embedded_nodes)):
@@ -60,46 +70,66 @@ def simplify_graph(
     if verbose:
         print(f"  Found {len(merge_pairs)} node pairs above {threshold} similarity")
 
-    # Decide keeper vs merged: keep the higher-degree node
+    # Build merge clusters using direct-similarity-only approach.
+    # For each cluster, the keeper is the highest-degree node, and every
+    # other node in the cluster must be directly above threshold with the keeper.
+    # This prevents transitive chain merging.
     merge_map: dict[str, str] = {}  # merged → keeper
-    for node_a, node_b, sim in sorted(merge_pairs, key=lambda x: -x[2]):
-        # Resolve transitively
-        a = _resolve(node_a, merge_map)
-        b = _resolve(node_b, merge_map)
-        if a == b:
+    merged_already: set[str] = set()
+
+    # Sort pairs by similarity descending — process the strongest pairs first
+    merge_pairs.sort(key=lambda x: -x[2])
+
+    # Build adjacency: for each node, which other nodes are directly similar?
+    similar_to: dict[str, list[tuple[str, float]]] = {}
+    for a, b, sim in merge_pairs:
+        similar_to.setdefault(a, []).append((b, sim))
+        similar_to.setdefault(b, []).append((a, sim))
+
+    # Process: for each unmerged node with similar neighbors, form a cluster
+    # by picking the highest-degree node as keeper and only merging nodes
+    # that are directly above threshold with the keeper.
+    processed: set[str] = set()
+    for node_a, node_b, sim in merge_pairs:
+        if node_a in merged_already or node_b in merged_already:
             continue
 
-        deg_a = builder.get_node_degree(a)
-        deg_b = builder.get_node_degree(b)
-
+        # Determine keeper (higher degree)
+        deg_a = builder.get_node_degree(node_a)
+        deg_b = builder.get_node_degree(node_b)
         if deg_a >= deg_b:
-            keeper, merged = a, b
+            keeper, other = node_a, node_b
         else:
-            keeper, merged = b, a
+            keeper, other = node_b, node_a
 
-        merge_map[merged] = keeper
+        if keeper in merged_already:
+            continue
+
+        # Merge 'other' into 'keeper'
+        merge_map[other] = keeper
+        merged_already.add(other)
+
+        # Also check if any of keeper's other direct-similar nodes can be merged
+        keeper_idx = node_to_idx[keeper]
+        for candidate, cand_sim in similar_to.get(keeper, []):
+            if candidate in merged_already or candidate == keeper:
+                continue
+            # Verify direct similarity with keeper (not transitive)
+            cand_idx = node_to_idx[candidate]
+            direct_sim = float(sim_matrix[keeper_idx, cand_idx])
+            if direct_sim >= threshold:
+                merge_map[candidate] = keeper
+                merged_already.add(candidate)
 
     if verbose:
-        print(f"  Merging {len(merge_map)} nodes")
+        print(f"  Merging {len(merge_map)} nodes (no transitive chains)")
 
     # Apply merges to builder
     for merged, keeper in merge_map.items():
         _merge_node(builder, merged, keeper)
-        # Update embeddings: keep the keeper, remove the merged
         embeddings.remove(merged)
 
     return merge_map
-
-
-def _resolve(node: str, merge_map: dict[str, str]) -> str:
-    """Follow the merge chain to find the final keeper."""
-    visited: set[str] = set()
-    while node in merge_map:
-        if node in visited:
-            break
-        visited.add(node)
-        node = merge_map[node]
-    return node
 
 
 def _merge_node(builder: HypergraphBuilder, merged: str, keeper: str) -> None:

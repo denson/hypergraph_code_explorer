@@ -1,8 +1,11 @@
 """
 Node Embedding Manager
 =======================
-CodeBERT (microsoft/codebert-base) via sentence-transformers.
-768-dim, no trust_remote_code, no task prefixes.
+Uses all-MiniLM-L6-v2 (384-dim) by default. This model was trained for
+semantic textual similarity and produces meaningfully different embeddings
+for short identifiers — unlike CodeBERT which was never trained as a
+sentence-transformers model and produces near-identical vectors for short
+tokens due to [CLS]/[SEP] overhead dominating the mean pool.
 """
 
 from __future__ import annotations
@@ -16,7 +19,7 @@ import numpy as np
 class EmbeddingManager:
     """Manages node embeddings for the hypergraph."""
 
-    DEFAULT_MODEL = "microsoft/codebert-base"
+    DEFAULT_MODEL = "all-MiniLM-L6-v2"
 
     def __init__(
         self,
