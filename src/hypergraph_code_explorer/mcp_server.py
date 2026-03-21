@@ -1,14 +1,19 @@
 """
 MCP Server
 ==========
-FastMCP server exposing 8 tools for hypergraph-based code exploration.
+FastMCP server exposing 5 tools for hypergraph-based code exploration.
+
+Tools:
+  - hce_lookup — exact symbol lookup + structural traversal
+  - hce_search — text search across all symbols
+  - hce_query — full dispatch query through all tiers
+  - hce_overview — codebase overview
+  - hce_stats — graph statistics
 """
 
 from __future__ import annotations
 
-import json
 import os
-import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -42,160 +47,117 @@ def create_server():
                     _session = HypergraphSession()
         return _session
 
-    def _get_anthropic_client():
-        import anthropic
-        return anthropic.Anthropic()
-
     @mcp.tool()
-    def hypergraph_retrieve(
-        query: str,
-        top_k: int = 20,
-        alpha: float = 0.6,
-    ) -> str:
-        """
-        Main retrieval: find relevant code relationships for a query.
-        Returns edges with traversal paths showing how concepts connect
-        through shared entities (intersection nodes).
-
-        Args:
-            query: Natural language query about the codebase
-            top_k: Number of seed nodes to match (default 20)
-            alpha: Balance precision vs coverage, 0-1 (default 0.6)
-        """
-        session = _get_session()
-        result = session.retrieve(query=query, top_k=top_k, alpha=alpha)
-        return json.dumps(result, indent=2)
-
-    @mcp.tool()
-    def hypergraph_find_path(
-        source: str,
-        target: str,
-        k_paths: int = 3,
-    ) -> str:
-        """
-        Find paths between two code entities through hyperedge space.
-        Returns edge-level paths with intersection nodes explaining
-        WHY each connection exists.
-
-        Args:
-            source: Source entity name (e.g. "Session")
-            target: Target entity name (e.g. "HTTPAdapter")
-            k_paths: Max number of paths to return (default 3)
-        """
-        session = _get_session()
-        result = session.find_path(source=source, target=target, k_paths=k_paths)
-        return json.dumps(result, indent=2)
-
-    @mcp.tool()
-    def hypergraph_neighbors(
-        node: str,
-        s: int = 1,
-    ) -> str:
-        """
-        Get the edge-intersection neighbourhood of a node.
-        Shows all edges incident on the node and edges that intersect them,
-        grouped by the shared nodes that connect them.
-
-        Args:
-            node: Entity name to explore
-            s: Minimum shared nodes for intersection (default 1)
-        """
-        session = _get_session()
-        result = session.neighbors(node=node, s=s)
-        return json.dumps(result, indent=2)
-
-    @mcp.tool()
-    def hypergraph_coverage(
-        retrieved_edge_ids: list[str],
-        seed_node_ids: list[str],
+    def hce_lookup(
+        symbol: str,
+        calls: bool = False,
+        callers: bool = False,
+        inherits: bool = False,
+        imports: bool = False,
         depth: int = 1,
     ) -> str:
         """
-        Evaluate coverage of previous retrieval results.
-        No LLM calls — purely graph-structural analysis.
-        Use when coverage_score < 0.5 or frontier nodes have high degree.
+        Look up a symbol in the code graph. Returns file paths, related
+        symbols, and grep patterns for the matched symbol.
 
         Args:
-            retrieved_edge_ids: Edge IDs from a previous retrieve call
-            seed_node_ids: Matched node names from retrieve
-            depth: Frontier expansion depth (default 1)
+            symbol: Symbol name to look up (e.g. "Session.send")
+            calls: Show what this symbol calls
+            callers: Show what calls this symbol
+            inherits: Show inheritance relationships
+            imports: Show import relationships
+            depth: Traversal depth for structural expansion (default 1)
         """
+        from .retrieval.plan import format_json
+
         session = _get_session()
-        result = session.coverage(
-            retrieved_edge_ids=retrieved_edge_ids,
-            seed_node_ids=seed_node_ids,
-            depth=depth,
+
+        # Determine edge types from flags
+        edge_types: list[str] = []
+        if calls:
+            edge_types.append("CALLS")
+        if callers:
+            edge_types.append("CALLS")
+        if inherits:
+            edge_types.append("INHERITS")
+        if imports:
+            edge_types.append("IMPORTS")
+        if not edge_types:
+            edge_types = None
+
+        # Determine direction
+        direction = "both"
+        if calls and not callers:
+            direction = "forward"
+        elif callers and not calls:
+            direction = "backward"
+
+        plan = session.lookup(
+            symbol, edge_types=edge_types, depth=depth, direction=direction,
         )
-        return json.dumps(result, indent=2)
+        return format_json(plan)
 
     @mcp.tool()
-    def hypergraph_summarize(
-        scope: str = "file",
-        paths: list[str] | None = None,
-        force: bool = False,
-        model: str = "haiku",
+    def hce_search(
+        term: str,
+        max_results: int = 20,
     ) -> str:
         """
-        Generate module-level summaries. Build-time operation.
-        Creates SUMMARY edges that provide high-level orientation
-        for broad queries.
+        Text search across all symbols in the code graph. Finds symbols
+        by substring matching on names, file paths, and relations.
 
         Args:
-            scope: "file" or "directory" (default "file")
-            paths: Specific files to summarize (None = all)
-            force: Regenerate existing summaries (default False)
-            model: "haiku" (fast/cheap) or "sonnet" (higher quality)
+            term: Search term (e.g. "auth", "send")
+            max_results: Maximum number of results (default 20)
         """
-        model_map = {
-            "haiku": "claude-haiku-4-5-20251001",
-            "sonnet": "claude-sonnet-4-6",
-        }
-        model_id = model_map.get(model, model)
+        from .retrieval.plan import format_json
 
         session = _get_session()
-        client = _get_anthropic_client()
-        result = session.summarize(
-            anthropic_client=client,
-            scope=scope,
-            paths=paths,
-            force=force,
-            model=model_id,
-        )
+        plan = session.search(term, max_results=max_results)
+        return format_json(plan)
+
+    @mcp.tool()
+    def hce_query(
+        query: str,
+        depth: int = 2,
+    ) -> str:
+        """
+        Natural language query against the code graph. Routes through
+        multiple retrieval tiers: exact lookup, structural traversal,
+        and text search.
+
+        Args:
+            query: Natural language question about the codebase
+            depth: Traversal depth for structural expansion (default 2)
+        """
+        from .retrieval.plan import format_json
+
+        session = _get_session()
+        plan = session.query(query, depth=depth)
+        return format_json(plan)
+
+    @mcp.tool()
+    def hce_overview(
+        top: int = 10,
+    ) -> str:
+        """
+        Get a codebase overview: modules, key symbols by connectivity,
+        and reading order.
+
+        Args:
+            top: Number of top symbols to include (default 10)
+        """
+        import json
+        session = _get_session()
+        result = session.overview(top=top)
         return json.dumps(result, indent=2)
 
     @mcp.tool()
-    def hypergraph_stats() -> str:
-        """Get graph statistics: node count, edge count, type breakdown."""
+    def hce_stats() -> str:
+        """Get graph statistics: node count, edge count, type breakdown, hub nodes."""
+        import json
         session = _get_session()
         result = session.stats()
-        return json.dumps(result, indent=2)
-
-    @mcp.tool()
-    def hypergraph_list_nodes(limit: int = 100) -> str:
-        """
-        List all nodes with degree info, sorted by degree descending.
-
-        Args:
-            limit: Max nodes to return (default 100)
-        """
-        session = _get_session()
-        result = session.list_nodes(limit=limit)
-        return json.dumps(result, indent=2)
-
-    @mcp.tool()
-    def hypergraph_list_edges(
-        limit: int = 100,
-        edge_type: str | None = None,
-    ) -> str:
-        """
-        List edges with metadata, optionally filtered by type.
-
-        Args:
-            limit: Max edges to return (default 100)
-            edge_type: Filter by type (CALLS, IMPORTS, DEFINES, etc.)
-        """
-        session = _get_session()
-        result = session.list_edges(limit=limit, edge_type=edge_type)
         return json.dumps(result, indent=2)
 
     return mcp

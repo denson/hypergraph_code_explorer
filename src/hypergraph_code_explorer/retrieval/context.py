@@ -1,4 +1,7 @@
 """
+# DEPRECATED — replaced by retrieval/plan.py format_text() in v3.
+# Kept for backward compatibility with legacy pipeline.query().
+
 Context Assembly
 ================
 Takes a RetrievalResult and produces structured text preserving

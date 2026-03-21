@@ -1,16 +1,26 @@
 """
+# DEPRECATED — replaced by retrieval/dispatch.py + tier modules in v3.
+# Kept for backward compatibility and test coverage of builder features.
+
 Edge-Intersection Retrieval
 ============================
 THE CORE MODULE. Implements the full retrieval algorithm:
-  Phase 1 — Seed edge selection via embedding similarity
-  Phase 2 — Intersection expansion via shared nodes
+  Phase 1 — Seed edge selection via hybrid embedding/keyword similarity
+  Phase 2 — Intersection expansion via shared nodes (hub-filtered, IDF-weighted)
   Phase 3 — Traversal path construction following intersection chains
 
-Scoring: score = (α × weighted_precision + (1−α) × coverage) × type_weight
+Scoring: score = (α × wp + (1−α) × cov) × type_weight
+  wp = mean_sim × sqrt(match_ratio)
+
+Hub node filtering: nodes appearing in >3% of edges are excluded from
+intersection calculations. Remaining intersection nodes are weighted by
+IDF = log(1 + total_edges / degree) so that specific nodes (Session, HTTPAdapter)
+contribute more than generic ones (isinstance, ValueError).
 """
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 
 from ..graph.builder import HypergraphBuilder
@@ -54,6 +64,10 @@ def retrieve(
     tw = type_weights or DEFAULT_TYPE_WEIGHTS
     it = intersection_thresholds or DEFAULT_INTERSECTION_THRESHOLDS
 
+    # Compute node IDF for intersection weighting and hub filtering
+    node_idf = builder.compute_node_idf()
+    hub_nodes = builder.get_hub_nodes(max_degree_pct=0.03)
+
     # Phase 1 — Seed edge selection
     matched_nodes = embeddings.top_k_similar(query, k=top_k)
     if not matched_nodes:
@@ -82,8 +96,11 @@ def retrieve(
         if not matched_in_edge:
             continue
 
-        # Weighted precision: sum of similarities of matched nodes / edge size
-        wp = sum(node_scores[n] for n in matched_in_edge) / len(record.all_nodes)
+        # Weighted precision: mean_sim × sqrt(match_ratio)
+        # Gentler on large edges than the old sum(sim)/|edge| formula.
+        mean_sim = sum(node_scores[n] for n in matched_in_edge) / len(matched_in_edge)
+        match_ratio = len(matched_in_edge) / len(record.all_nodes)
+        wp = mean_sim * math.sqrt(match_ratio)
         # Coverage: fraction of query's matched nodes present in this edge
         cov = len(matched_in_edge) / k
         # Type weight
@@ -104,7 +121,7 @@ def retrieve(
     for eid, se in sorted(seed_scored.items(), key=lambda x: x[1].score, reverse=True):
         record = se.edge
         threshold = it.get(record.edge_type, 1)
-        adjacent = builder.get_adjacent_edges(eid, s=threshold)
+        adjacent = builder.get_adjacent_edges(eid, s=threshold, exclude_nodes=hub_nodes)
 
         for adj_eid, intersection_nodes in adjacent:
             if adj_eid in seed_scored or adj_eid in expansion_scored:
@@ -114,10 +131,11 @@ def retrieve(
             if adj_record is None:
                 continue
 
-            # Intersection score: |intersection| × avg similarity of intersection nodes
+            # IDF-weighted intersection: specific nodes count more than generic ones
             int_sims = [node_scores.get(n, 0.0) for n in intersection_nodes]
             avg_sim = sum(int_sims) / len(int_sims) if int_sims else 0.0
-            intersection_score = len(intersection_nodes) * avg_sim
+            idf_weight = sum(node_idf.get(n, 1.0) for n in intersection_nodes)
+            intersection_score = idf_weight * avg_sim
 
             # Combined: blend seed-edge score with intersection quality
             final_score = alpha * se.score + (1 - alpha) * intersection_score
@@ -145,7 +163,7 @@ def retrieve(
 
     # Phase 3 — Traversal path construction
     traversal_paths = _build_traversal_paths(
-        sorted_edges, builder, it, max_hops=max_hops,
+        sorted_edges, builder, it, max_hops=max_hops, hub_nodes=hub_nodes,
     )
 
     # Compute coverage score
@@ -179,6 +197,7 @@ def _build_traversal_paths(
     builder: HypergraphBuilder,
     thresholds: dict[str, int],
     max_hops: int = 5,
+    hub_nodes: set[str] | None = None,
 ) -> list[PathReport]:
     """Build traversal paths following highest-scoring intersections."""
     if not scored_edges:
@@ -205,7 +224,7 @@ def _build_traversal_paths(
                 break
 
             threshold = thresholds.get(current_record.edge_type, 1)
-            adjacent = builder.get_adjacent_edges(current_eid, s=threshold)
+            adjacent = builder.get_adjacent_edges(current_eid, s=threshold, exclude_nodes=hub_nodes)
 
             # Pick the highest-scoring adjacent edge from our scored set
             best_next = None

@@ -1,4 +1,7 @@
 """
+# DEPRECATED — replaced by retrieval/traverse.py in v3.
+# Kept for backward compatibility with legacy pipeline.find_path().
+
 Edge-BFS Path Finder
 ====================
 Finds shortest paths between two entities through hyperedge space.

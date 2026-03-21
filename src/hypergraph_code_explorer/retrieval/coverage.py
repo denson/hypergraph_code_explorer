@@ -1,4 +1,7 @@
 """
+# DEPRECATED — coverage evaluation is less meaningful in v3's plan-based output.
+# Kept for backward compatibility.
+
 Coverage Evaluation
 ===================
 The hypergraph_coverage tool: purely local, no LLM calls.

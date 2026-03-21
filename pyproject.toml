@@ -6,15 +6,23 @@ requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.46.0",
     "python-dotenv>=1.0.0",
-    "hypernetx>=2.4.0",
-    "networkx>=3.0",
-    "numpy>=1.26.0",
-    "sentence-transformers>=3.0.0",
     "markitdown[all]>=0.1.0",
+]
+
+[project.optional-dependencies]
+embed = [
+    "sentence-transformers>=3.0.0",
+    "numpy>=1.26.0",
+]
+server = [
+    "mcp>=1.0.0",
+]
+text = [
     "pydantic>=2.0.0",
     "instructor>=1.0.0",
-    "langchain-text-splitters>=0.3.0",
-    "mcp>=1.0.0",
+]
+all = [
+    "hypergraph-code-explorer[embed,server,text]",
 ]
 
 [project.scripts]

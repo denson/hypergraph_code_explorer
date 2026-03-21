@@ -116,3 +116,49 @@ def test_retrieval_source_breakdown():
 
     assert "seed" in result.retrieval_source_breakdown
     assert "intersection" in result.retrieval_source_breakdown
+
+
+def test_large_edge_not_penalised_by_wp():
+    """Verify that the mean_sim × sqrt(match_ratio) formula does not crush
+    large edges the way sum(sim)/|edge| did.
+
+    A 10-node edge with 3 high-similarity matches should outscore a 2-node
+    edge with 1 mediocre match.
+    """
+    import math
+
+    builder = HypergraphBuilder()
+
+    # Large edge: 10 nodes, 3 of which will match with high similarity
+    large_sources = ["caller"]
+    large_targets = [f"target_{i}" for i in range(9)]
+    builder.add_edge(_make_record(
+        "large", large_sources, large_targets, edge_type="CALLS",
+    ))
+
+    # Small edge: 2 nodes, 1 of which matches with mediocre similarity
+    builder.add_edge(_make_record(
+        "small", ["mediocre_match"], ["other_node"], edge_type="CALLS",
+    ))
+
+    # Simulate node scores: 3 high matches in large edge, 1 mediocre in small
+    high_sim = 0.85
+    med_sim = 0.50
+
+    # --- old formula: sum(sim) / |edge| ---
+    old_wp_large = (3 * high_sim) / 10          # 0.255
+    old_wp_small = (1 * med_sim) / 2            # 0.250
+    # These are almost equal — the old formula nearly erased the advantage.
+
+    # --- new formula: mean_sim × sqrt(match_ratio) ---
+    new_wp_large = high_sim * math.sqrt(3 / 10)  # 0.85 × 0.548 ≈ 0.466
+    new_wp_small = med_sim * math.sqrt(1 / 2)    # 0.50 × 0.707 ≈ 0.354
+
+    # New formula correctly ranks the large edge higher
+    assert new_wp_large > new_wp_small, (
+        f"Large edge wp ({new_wp_large:.3f}) should beat small edge wp ({new_wp_small:.3f})"
+    )
+    # And the gap is meaningful, not razor-thin like the old formula
+    assert new_wp_large - new_wp_small > 0.05, (
+        f"Gap ({new_wp_large - new_wp_small:.3f}) should be meaningful (> 0.05)"
+    )

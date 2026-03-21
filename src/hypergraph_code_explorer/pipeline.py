@@ -2,7 +2,9 @@
 Pipeline Orchestrator
 =====================
 Sequence: discover files → convert → chunk → extract edges → build graph →
-embed → simplify → generate summaries.
+simplify → generate summaries → generate codemap.
+
+Embeddings are optional (Tier 4) and only computed when explicitly requested.
 
 File-hash caching: store manifest {file_path: (sha256, [edge_ids])}.
 On re-index: skip unchanged, re-extract modified, add new, remove deleted.
@@ -16,16 +18,11 @@ from pathlib import Path
 
 from .extraction.code_extractor import CodeHyperedgeExtractor
 from .graph.builder import HypergraphBuilder
-from .graph.embeddings import EmbeddingManager
 from .graph.simplify import simplify_graph
 from .graph.summaries import generate_summaries
 from .ingestion.chunker import ContentAwareChunker
 from .ingestion.converter import DocumentConverter
 from .models import HyperedgeRecord
-from .retrieval.context import assemble_context
-from .retrieval.coverage import evaluate_coverage
-from .retrieval.intersection import retrieve
-from .retrieval.pathfinder import find_paths
 
 
 class HypergraphPipeline:
@@ -34,7 +31,6 @@ class HypergraphPipeline:
     def __init__(
         self,
         verbose: bool = False,
-        device: str = "cpu",
         text_edges: bool = False,
         skip_summaries: bool = False,
         summary_model: str = "claude-haiku-4-5-20251001",
@@ -48,7 +44,6 @@ class HypergraphPipeline:
         self.chunker = ContentAwareChunker()
         self.code_extractor = CodeHyperedgeExtractor()
         self.builder = HypergraphBuilder()
-        self.embeddings = EmbeddingManager(device=device, verbose=verbose)
 
         self._manifest: dict[str, tuple[str, list[str]]] = {}
         self._cache_dir: Path | None = None
@@ -62,7 +57,9 @@ class HypergraphPipeline:
         anthropic_client=None,
     ) -> dict:
         """
-        Index a directory: convert → chunk → extract → build → embed → simplify.
+        Index a directory: convert → chunk → extract → build → simplify → summarize → codemap.
+
+        Embeddings are NOT computed by default. Use `hce embed` or `hce index --embed`.
 
         Returns a stats dict.
         """
@@ -136,15 +133,10 @@ class HypergraphPipeline:
         if self.verbose:
             print(f"  Added {total_edges} new edges")
 
-        # Embed all nodes
-        if self.verbose:
-            print("  Embedding nodes...")
-        self.embeddings.embed_all_from_builder(self.builder)
-
-        # Simplify
+        # Simplify (skips automatically when embeddings=None)
         if self.verbose:
             print("  Simplifying graph...")
-        merge_map = simplify_graph(self.builder, self.embeddings, verbose=self.verbose)
+        merge_map = simplify_graph(self.builder, None, verbose=self.verbose)
 
         # Generate summaries
         if not self.skip_summaries and anthropic_client:
@@ -154,8 +146,10 @@ class HypergraphPipeline:
                 self.builder, anthropic_client,
                 model=self.summary_model, verbose=self.verbose,
             )
-            # Re-embed after summaries (new nodes from summary key entities)
-            self.embeddings.embed_all_from_builder(self.builder)
+
+        # Generate codemap
+        from .codemap import generate_codemap
+        generate_codemap(self.builder, cache_dir=self._cache_dir)
 
         # Save state
         self._save_state()
@@ -165,34 +159,42 @@ class HypergraphPipeline:
         stats["files_indexed"] = len(self._manifest)
         return stats
 
-    # ---- querying ----------------------------------------------------------
+    # ---- querying (v3: dispatch-based) -------------------------------------
 
     def query(
         self,
         query: str,
-        top_k: int = 20,
-        alpha: float = 0.6,
+        depth: int = 2,
+        max_results: int = 20,
+        edge_types: list[str] | None = None,
     ) -> dict:
-        """Run a query and return structured results with context text."""
-        result = retrieve(
+        """Run a query through the tiered dispatch system.
+
+        Returns a RetrievalPlan as a dict.
+        """
+        from .retrieval.dispatch import dispatch
+        from .retrieval.plan import format_text
+
+        plan = dispatch(
             query=query,
             builder=self.builder,
-            embeddings=self.embeddings,
-            top_k=top_k,
-            alpha=alpha,
+            depth=depth,
+            max_results=max_results,
+            edge_types=edge_types,
         )
-        context_text = assemble_context(result)
-        output = result.to_dict()
-        output["context_text"] = context_text
-        return output
+        result = plan.to_dict()
+        result["context_text"] = format_text(plan)
+        return result
 
+    # LEGACY: kept for backward compatibility with old MCP tools
     def find_path(
         self,
         source: str,
         target: str,
         k_paths: int = 3,
     ) -> dict:
-        """Find paths between two entities."""
+        """Find paths between two entities. (Legacy — uses old pathfinder)"""
+        from .retrieval.pathfinder import find_paths
         paths = find_paths(
             source=source,
             target=target,
@@ -206,8 +208,9 @@ class HypergraphPipeline:
             "num_paths": len(paths),
         }
 
+    # LEGACY: kept for backward compatibility
     def get_neighbors(self, node: str, s: int = 1) -> dict:
-        """Get edge-intersection neighbourhood for a node."""
+        """Get edge-intersection neighbourhood for a node. (Legacy)"""
         incident = self.builder.get_edges_for_node(node)
         intersecting: list[dict] = []
 
@@ -234,13 +237,15 @@ class HypergraphPipeline:
             "intersecting_edges": intersecting,
         }
 
+    # LEGACY: kept for backward compatibility
     def get_coverage(
         self,
         retrieved_edge_ids: list[str],
         seed_node_ids: list[str],
         depth: int = 1,
     ) -> dict:
-        """Evaluate coverage of retrieved edges."""
+        """Evaluate coverage of retrieved edges. (Legacy)"""
+        from .retrieval.coverage import evaluate_coverage
         result = evaluate_coverage(
             retrieved_edge_ids=retrieved_edge_ids,
             seed_node_ids=seed_node_ids,
@@ -277,7 +282,6 @@ class HypergraphPipeline:
         if self._cache_dir is None:
             return
         self.builder.save(self._cache_dir / "builder.pkl")
-        self.embeddings.save(self._cache_dir / "embeddings.pkl")
         with open(self._cache_dir / "manifest.json", "w") as f:
             json.dump(self._manifest, f, indent=2)
 
@@ -286,17 +290,12 @@ class HypergraphPipeline:
             return
 
         builder_path = self._cache_dir / "builder.pkl"
-        embeddings_path = self._cache_dir / "embeddings.pkl"
         manifest_path = self._cache_dir / "manifest.json"
 
         if builder_path.exists():
             self.builder = HypergraphBuilder.load(builder_path)
             if self.verbose:
                 print("  Loaded existing graph")
-        if embeddings_path.exists():
-            self.embeddings = EmbeddingManager.load(embeddings_path, device=self.embeddings.device)
-            if self.verbose:
-                print("  Loaded existing embeddings")
         if manifest_path.exists():
             with open(manifest_path) as f:
                 self._manifest = json.load(f)
@@ -308,7 +307,6 @@ class HypergraphPipeline:
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
         self.builder.save(path / "builder.pkl")
-        self.embeddings.save(path / "embeddings.pkl")
         with open(path / "manifest.json", "w") as f:
             json.dump(self._manifest, f, indent=2)
 
@@ -316,7 +314,6 @@ class HypergraphPipeline:
         """Load full state from a directory."""
         path = Path(path)
         self.builder = HypergraphBuilder.load(path / "builder.pkl")
-        self.embeddings = EmbeddingManager.load(path / "embeddings.pkl", device=self.embeddings.device)
         manifest_path = path / "manifest.json"
         if manifest_path.exists():
             with open(manifest_path) as f:

@@ -41,6 +41,9 @@ def simplify_graph(
     Returns:
         Dict mapping merged node names to their keeper names
     """
+    if embeddings is None:
+        return {}
+
     all_nodes = sorted(builder.get_all_nodes())
     if len(all_nodes) < 2:
         return {}

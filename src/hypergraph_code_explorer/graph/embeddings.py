@@ -6,14 +6,42 @@ semantic textual similarity and produces meaningfully different embeddings
 for short identifiers — unlike CodeBERT which was never trained as a
 sentence-transformers model and produces near-identical vectors for short
 tokens due to [CLS]/[SEP] overhead dominating the mean pool.
+
+Hugging Face Hub: models are fetched by ``sentence_transformers``, which uses
+``huggingface_hub``. For authenticated downloads or higher rate limits, set
+``HF_TOKEN`` (preferred) or ``HUGGING_FACE_HUB_TOKEN`` — see
+https://huggingface.co/settings/tokens
 """
 
 from __future__ import annotations
 
+import os
 import pickle
+import re
 from pathlib import Path
 
 import numpy as np
+
+
+def _load_dotenv_if_available() -> None:
+    """So HF_TOKEN in .env is visible even when EmbeddingManager is used alone."""
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+
+
+def _hf_download_instructions() -> str:
+    return (
+        "Embedding models are downloaded from Hugging Face Hub (via sentence-transformers).\n"
+        "If download fails or you hit rate limits / auth errors, set a read token:\n"
+        "  • Environment variable: HF_TOKEN (preferred) or HUGGING_FACE_HUB_TOKEN\n"
+        "  • Create a token: https://huggingface.co/settings/tokens\n"
+        "  • Put HF_TOKEN=... in .env or export it in your shell.\n"
+        "huggingface_hub picks up these variables automatically."
+    )
 
 
 class EmbeddingManager:
@@ -37,8 +65,30 @@ class EmbeddingManager:
 
     def _get_model(self):
         if self._model is None:
+            _load_dotenv_if_available()
+            if self.verbose:
+                if os.environ.get("HF_TOKEN") or os.environ.get(
+                    "HUGGING_FACE_HUB_TOKEN"
+                ):
+                    print(
+                        "  Hugging Face Hub: HF_TOKEN / HUGGING_FACE_HUB_TOKEN is set "
+                        "(authenticated downloads)"
+                    )
+                else:
+                    print(
+                        "  Hugging Face Hub: no token in env — anonymous download "
+                        "(set HF_TOKEN if you hit rate limits; see https://huggingface.co/settings/tokens)"
+                    )
             from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(self.model_name, device=self.device)
+
+            try:
+                self._model = SentenceTransformer(self.model_name, device=self.device)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to load embedding model {self.model_name!r}.\n\n"
+                    f"{_hf_download_instructions()}\n\n"
+                    f"Original error: {e!r}"
+                ) from e
             if self.verbose:
                 print(f"  Loaded embedding model: {self.model_name}")
         return self._model
@@ -81,6 +131,65 @@ class EmbeddingManager:
         all_nodes = builder.get_all_nodes()
         self.embed_nodes(list(all_nodes))
 
+    # ---- keyword helpers ---------------------------------------------------
+
+    @staticmethod
+    def _extract_identifiers(query: str) -> list[str]:
+        """Extract identifier-like tokens from a query string.
+
+        Splits on whitespace, dots, and underscores, then lowercases and
+        deduplicates while preserving order. Does NOT split camelCase so
+        that e.g. "HTTPAdapter" stays as "httpadapter" — avoiding false
+        substring matches against "HTTPDigestAuth", "HTTPError", etc.
+        """
+        raw_tokens = re.split(r'[\s.,;:!?(){}\[\]"\'`/\\]+', query)
+        seen: set[str] = set()
+        result: list[str] = []
+        for tok in raw_tokens:
+            for part in tok.split("_"):
+                low = part.lower()
+                if low and low not in seen and len(low) >= 3:
+                    seen.add(low)
+                    result.append(low)
+        return result
+
+    def _keyword_scores(
+        self,
+        query: str,
+        nodes: list[str],
+    ) -> np.ndarray:
+        """Compute keyword match scores for each node against query identifiers.
+
+        Filters out common English stopwords and short tokens, then returns
+        a high fixed score for any node containing a significant identifier:
+        1.0 for an exact match, 0.85 for a substring match. This ensures
+        identifier hits dominate over weak embedding similarities.
+        """
+        query_ids = self._extract_identifiers(query)
+        # Filter to significant identifiers only
+        STOPWORDS = {
+            "how", "does", "what", "why", "when", "where", "call", "calls",
+            "the", "and", "for", "that", "this", "with", "from", "into",
+            "use", "uses", "used", "get", "set", "has", "have", "can",
+            "will", "would", "should", "which", "each", "some", "any",
+        }
+        sig_ids = [t for t in query_ids if t not in STOPWORDS and len(t) >= 3]
+        if not sig_ids:
+            return np.zeros(len(nodes), dtype=np.float32)
+
+        scores = np.zeros(len(nodes), dtype=np.float32)
+        for i, node in enumerate(nodes):
+            node_lower = node.lower()
+            best = 0.0
+            for qid in sig_ids:
+                if qid == node_lower:
+                    best = 1.0
+                    break  # exact match — can't do better
+                elif qid in node_lower:
+                    best = max(best, 0.85)  # substring match
+            scores[i] = best
+        return scores
+
     # ---- similarity --------------------------------------------------------
 
     def top_k_similar(
@@ -89,7 +198,13 @@ class EmbeddingManager:
         k: int = 10,
         threshold: float = 0.0,
     ) -> list[tuple[str, float]]:
-        """Find the top-k nodes most similar to a query string."""
+        """Find the top-k nodes most similar to a query string.
+
+        Uses hybrid matching: for each node the final score is
+        ``max(embedding_similarity, keyword_score)`` so that exact identifier
+        matches are never missed even when the embedding model under-scores
+        them.
+        """
         if not self._embeddings:
             return []
 
@@ -98,7 +213,13 @@ class EmbeddingManager:
         matrix = np.stack([self._embeddings[n] for n in nodes])
 
         # Cosine similarity (embeddings are already normalised)
-        scores = matrix @ q_vec
+        embed_scores = matrix @ q_vec
+
+        # Keyword match scores
+        kw_scores = self._keyword_scores(query, nodes)
+
+        # Hybrid: take the max per node
+        scores = np.maximum(embed_scores, kw_scores)
 
         order = np.argsort(-scores)
         results = []

@@ -111,25 +111,45 @@ class HypergraphBuilder:
         nodes_2 = self._incidence.get(edge_id_2, set())
         return nodes_1 & nodes_2
 
-    def get_adjacent_edges(self, edge_id: str, s: int = 1) -> list[tuple[str, set[str]]]:
+    def get_adjacent_edges(
+        self,
+        edge_id: str,
+        s: int = 1,
+        exclude_nodes: set[str] | None = None,
+    ) -> list[tuple[str, set[str]]]:
         """
         Find edges sharing ≥ s nodes with the given edge.
         Returns list of (adjacent_edge_id, intersection_nodes).
+
+        Args:
+            edge_id: The edge to find neighbours for.
+            s: Minimum intersection size.
+            exclude_nodes: Nodes to ignore (e.g., hub nodes). These are not
+                counted toward the intersection size and not included in the
+                returned intersection sets. This prevents high-degree nodes
+                like 'int' or 'isinstance' from creating spurious adjacency.
         """
         nodes = self._incidence.get(edge_id, set())
         if not nodes:
             return []
 
-        # Collect candidate edges via inverted index
+        # Filter out hub nodes for candidate collection
+        effective_nodes = nodes - exclude_nodes if exclude_nodes else nodes
+        if not effective_nodes:
+            return []
+
+        # Collect candidate edges via inverted index (only through non-hub nodes)
         candidate_edges: set[str] = set()
-        for node in nodes:
+        for node in effective_nodes:
             candidate_edges.update(self._node_to_edges.get(node, set()))
         candidate_edges.discard(edge_id)
 
         results = []
         for cand_id in candidate_edges:
             cand_nodes = self._incidence.get(cand_id, set())
-            intersection = nodes & cand_nodes
+            intersection = effective_nodes & cand_nodes
+            if exclude_nodes:
+                intersection -= exclude_nodes
             if len(intersection) >= s:
                 results.append((cand_id, intersection))
 
@@ -145,6 +165,46 @@ class HypergraphBuilder:
     def get_node_degree(self, node: str) -> int:
         """Number of edges incident on a node."""
         return len(self._node_to_edges.get(normalise_node(node), set()))
+
+    def compute_node_idf(self) -> dict[str, float]:
+        """Compute IDF (Inverse Document Frequency) for every node.
+
+        idf(n) = log(1 + total_edges / degree(n))
+
+        High-degree "hub" nodes (int, isinstance, etc.) get low IDF.
+        Specific nodes (Session.send, HTTPAdapter) get high IDF.
+        Adapts automatically to any codebase size and language.
+        """
+        import math
+        total_edges = len(self._incidence)
+        if total_edges == 0:
+            return {}
+        idf: dict[str, float] = {}
+        for node, edge_ids in self._node_to_edges.items():
+            degree = len(edge_ids)
+            idf[node] = math.log(1 + total_edges / degree)
+        return idf
+
+    def get_hub_nodes(self, max_degree_pct: float = 0.03, min_degree_floor: int = 50) -> set[str]:
+        """Return nodes whose degree exceeds max_degree_pct * total_edges OR min_degree_floor.
+
+        These "hub" nodes appear in so many edges that they create
+        spurious adjacency connections. Uses a hybrid threshold:
+          - Percentage-based: adapts to graph size (3% of edges)
+          - Fixed floor: catches builtins/generics in large graphs
+        The LOWER of the two thresholds is used (i.e., more aggressive filtering).
+
+        Examples:
+          - 500 edges -> pct threshold = 15, floor = 50, effective = 15
+          - 20,000 edges -> pct threshold = 600, floor = 50, effective = 50
+        """
+        total_edges = len(self._incidence)
+        pct_threshold = max(2, int(total_edges * max_degree_pct))
+        threshold = min(pct_threshold, min_degree_floor)
+        return {
+            node for node, edge_ids in self._node_to_edges.items()
+            if len(edge_ids) > threshold
+        }
 
     # ---- removal -----------------------------------------------------------
 
