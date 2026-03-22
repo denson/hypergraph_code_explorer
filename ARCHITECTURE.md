@@ -2,57 +2,53 @@
 
 ## Overview
 
-`hypergraph_code_explorer` is a Python package that ingests a codebase, extracts structural relationships as **hyperedges** (N-ary relationships, not pairwise), and provides a tiered retrieval system for AI agents to explore the resulting graph.
+`hypergraph_code_explorer` is a Python package that ingests a multi-language codebase, extracts structural relationships as **hyperedges** (N-ary relationships, not pairwise), and provides a tiered retrieval system for AI agents and humans to explore the resulting graph. Extraction uses tree-sitter for 10 languages (Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, PHP) with a regex fallback for unsupported file types.
 
-The core value: **precomputed structural knowledge**. The hypergraph gives agents instant access to call chains, inheritance trees, and dependency graphs that would otherwise take 3-5 rounds of grep-read-think to discover.
-
-## Quick Start
-
-```bash
-# Install
-uv sync
-
-# Set up API key (needed for summaries)
-cp .env.example .env
-# Edit .env with your ANTHROPIC_API_KEY
-
-# Index a codebase
-hce index ../requests --verbose
-
-# Look up a symbol
-hce lookup Session.send --calls
-
-# Search for symbols
-hce search "auth"
-
-# Natural language query
-hce query "how does session send work"
-
-# Generate tool instruction files
-hce init --tool all
-
-# Start MCP server
-hce server
-```
+The core value: **precomputed structural knowledge at zero LLM cost**. The hypergraph gives agents instant access to call chains, inheritance trees, and dependency graphs that would otherwise take many rounds of grep-read-think to discover.
 
 ## Architecture
 
 ### Data Flow
 
 ```
-Source Files → Converter → Chunker → Extractor → Builder → Simplify → Summaries → Codemap
-                                                    ↓
-                                             Inverted Index
-                                                    ↓
-                                    Tiered Retrieval (dispatch)
-                                         ↓         ↓         ↓         ↓
-                                     Tier 1     Tier 2     Tier 3     Tier 4
-                                     Lookup    Traverse   TextSearch  Semantic
-                                                    ↓
-                                          RetrievalPlan output
-                                                    ↓
-                                      CLI / MCP Tools (5 endpoints)
+Source Files (.py, .js, .ts, .go, .rs, .java, .c, .cpp, .rb, .php, ...)
+     │
+     ▼
+Converter (markitdown) → Chunker (line-range splitting)
+     │
+     ▼
+Extractor (tree-sitter per-file parsing, regex fallback)
+     │
+     ▼
+Builder (hypergraph construction, inverted index, IDF)
+     │
+     ▼
+Simplify → Summaries (optional, LLM) → Codemap
+     │
+     ▼
+Tiered Retrieval (dispatch)
+  ├── Tier 1: Exact Lookup
+  ├── Tier 2: Structural Traversal
+  ├── Tier 3: Text Search
+  └── Tier 4: Semantic Search (optional, embeddings)
+     │
+     ▼
+CLI / MCP Tools (5 endpoints)
+     │
+     ▼
+Visualization Pipeline (optional, via skill)
+  extract_graph.py → generate_viz.py → self-contained HTML
 ```
+
+### Extraction: Tree-Sitter
+
+All supported languages are extracted per-file (not per-chunk) to ensure correct class-qualified names and complete DEFINES edges. The extraction layer has two components:
+
+**`treesitter_extractor.py`** — The core backend. Loads tree-sitter grammars lazily per language, walks the AST, and emits `HyperedgeRecord` objects. Each language maps file extensions to a tree-sitter grammar (e.g., `.tsx` → TSX, `.hpp` → C++). Language detection is by file extension via `LANGUAGE_MAP`.
+
+**`code_extractor.py`** — The public-facing class (`CodeHyperedgeExtractor`). Delegates to `treesitter_extractor` for supported languages and falls back to regex for anything else. The regex fallback extracts only DEFINES and IMPORTS edges — enough for basic structure but no call graph.
+
+**`_legacy_python_extractor.py`** — Deprecated. The original Python-only `ast` module extractor, kept for test backward compatibility.
 
 ### Core Data Structures
 
@@ -82,13 +78,13 @@ The inverted index makes intersection traversal fast: O(1) to find all edges tou
 
 | Type | Source | Weight | Description |
 |------|--------|--------|-------------|
-| CALLS | AST | 1.0 | Function/method call sites |
-| IMPORTS | AST | 1.0 | Import statements |
-| DEFINES | AST | 1.0 | Class/function definitions |
-| INHERITS | AST | 1.0 | Class inheritance |
-| SIGNATURE | AST | 1.0 | Function parameter types |
-| RAISES | AST | 1.0 | Exception types raised |
-| DECORATES | AST | 1.0 | Decorator usage |
+| CALLS | tree-sitter | 1.0 | Function/method call sites |
+| IMPORTS | tree-sitter | 1.0 | Import statements |
+| DEFINES | tree-sitter | 1.0 | Class/function definitions |
+| INHERITS | tree-sitter | 1.0 | Class inheritance |
+| SIGNATURE | tree-sitter | 1.0 | Function parameter types |
+| RAISES | tree-sitter | 1.0 | Exception types raised |
+| DECORATES | tree-sitter | 1.0 | Decorator usage |
 | TEXT | LLM | 0.7 | Semantic relationships (opt-in) |
 | SUMMARY | LLM | 0.3 | File-level summaries |
 
@@ -113,18 +109,25 @@ Classifies queries and routes through tiers:
 3. If no exact matches → Tier 3, then feed results back into Tier 1+2
 4. Tier 4 available on demand
 
-### CODEBASE_MAP.md
-
-Generated automatically after indexing. Contains:
-- **Modules**: all source files with one-line descriptions
-- **Key Symbols**: top 100 nodes by connectivity
-- **Call Chains**: top 20 longest call paths
-- **Inheritance Trees**: top 10 class hierarchies
-- **CLI Quick Reference**: common hce commands
-
 ### Hub Node Filtering
 
 High-degree nodes (`int`, `str`, `isinstance`) pollute traversal results. The builder computes IDF weights: `idf(n) = log(1 + total_edges / degree(n))`. Hub detection uses a hybrid threshold: `min(3% of total edges, floor of 50)`. The percentage adapts to graph size while the floor catches builtins in large graphs where 3% would be too high (e.g., at Django's 19k edges, 3% = 581, missing `len` at 498 edges). Hubs are excluded from adjacency traversal.
+
+### CODEBASE_MAP.md
+
+Generated automatically after indexing. Contains modules (all source files with one-line descriptions), key symbols (top 100 nodes by connectivity), call chains (top 20 longest call paths), inheritance trees (top 10 class hierarchies), and a CLI quick reference.
+
+### Visualization Pipeline
+
+The `skill/` directory bundles an agent skill that automates visualization. The pipeline works in three stages:
+
+**`skill/scripts/extract_graph.py`** — Reads `.hce_cache/` and produces `graph.json` with language-tagged nodes. Output format: `{nodes: [{id, label, group, degree, importance, language}], edges: [{source, target, type, file}]}`. The `language` field is derived from the source file extension.
+
+**`skill/scripts/generate_viz.py`** — Takes `graph.json` + `tours.json`, minifies the data (short keys for compact HTML), and injects it into the bundled D3.js template. Produces a self-contained HTML file with no external dependencies.
+
+**`skill/assets/viz_template.html`** — The D3.js visualization template (~580 lines). Includes force-directed layout, importance-based node sizing, dual color modes (by module / by language using GitHub's palette), guided tours with click-to-spotlight, symbol search with suggestion chips, a "Suggest Tours" button (client-side cluster analysis), and a "Copy Prompt for Claude" button that generates a pre-loaded prompt for requesting AI-authored tours.
+
+The agent writes `tours.json` with guided tours, group colors, and a colorblind-safe palette. The template uses placeholder markers (`{{TITLE}}`, `// {{DATA_INJECTION}}`, `// {{TOURS_INJECTION}}`, `// {{CONFIG_INJECTION}}`) that `generate_viz.py` replaces at generation time.
 
 ### File-Hash Caching
 
@@ -134,7 +137,7 @@ Manifest: `{file_path: (sha256, [edge_ids])}`. On re-index: skip unchanged, re-e
 
 | Command | Description |
 |---------|-------------|
-| `hce index <path>` | Index a codebase |
+| `hce index <path>` | Index a codebase (point at the source root, not the repo root) |
 | `hce lookup <symbol>` | Look up a symbol (Tier 1+2) |
 | `hce search <term>` | Text search (Tier 3) |
 | `hce query "question"` | Natural language query (all tiers) |
@@ -172,9 +175,10 @@ graph/embeddings.py      ← numpy, sentence-transformers (optional)
 graph/simplify.py        ← builder, embeddings
 graph/summaries.py       ← builder, anthropic
 ingestion/converter.py   ← markitdown
-ingestion/chunker.py     ← ast, converter
-extraction/code_extractor.py ← ast, models, chunker
-extraction/text_extractor.py ← anthropic, instructor (optional), models
+ingestion/chunker.py     ← converter
+extraction/treesitter_extractor.py ← tree-sitter, tree-sitter-*, chunker, models
+extraction/code_extractor.py       ← treesitter_extractor, chunker, models
+extraction/text_extractor.py       ← anthropic, instructor (optional), models
 retrieval/plan.py        ← no deps (pure data model)
 retrieval/lookup.py      ← builder, plan
 retrieval/traverse.py    ← builder, plan
@@ -187,76 +191,9 @@ pipeline.py              ← all above
 api.py                   ← builder, retrieval
 mcp_server.py            ← api, mcp
 cli.py                   ← all above
+skill/scripts/extract_graph.py    ← reads .hce_cache/ JSON directly
+skill/scripts/generate_viz.py     ← reads graph.json, tours.json, viz_template.html
 ```
-
-## Agent Integration
-
-HCE is designed to be used by AI coding agents (Claude Code, Cursor, Cowork,
-Codex) as a structural navigation layer. Rather than grepping through files
-and hoping to find the right symbols, agents use HCE to ask structured
-questions about a codebase and get precise answers with zero LLM cost.
-
-### Installing for Agent Use
-
-```bash
-# From the repo root:
-pip install -e .
-
-# Verify:
-hce --help
-```
-
-This puts `hce` on PATH so agents can call it directly.
-
-### Bundled Skill
-
-The `skills/hce-index/` directory contains a ready-to-use skill for Claude Code
-and Cowork. The skill teaches the agent to:
-
-1. Index a new codebase when it first encounters one
-2. Read the stats to decide if the hypergraph is worth using
-3. Use `hce lookup`, `hce search`, and `hce query` before reading source files
-
-**Installing the skill:**
-
-For Claude Code (global):
-```bash
-cp -r skills/hce-index ~/.claude/skills/
-```
-
-For Claude Code (per-project):
-```bash
-cp -r skills/hce-index .claude/skills/
-```
-
-For Cowork, copy to your Cowork skills directory.
-
-### Scale Reference
-
-Tested against real codebases at three scales:
-
-| Codebase | Files | Nodes | Edges | Hub Nodes | Index Time |
-|----------|-------|-------|-------|-----------|------------|
-| requests | 18 | 906 | 485 | 11 | ~3s |
-| FastAPI | 48 | 1,264 | 1,214 | 13 | ~9s |
-| Django | 1,163 | 23,614 | 19,382 | 103 | ~196s |
-
-The skill's decision rule: <500 nodes = just read files directly, 500-2000 =
-use for targeted lookups, >2000 = essential for efficient navigation.
-
-### How Agents Use It
-
-The typical agent workflow with HCE:
-
-1. **Index** — `hce index <source-root> --skip-summaries`
-2. **Stats** — `hce stats --cache-dir ...` to gauge scale
-3. **Lookup** — `hce lookup ClassName --calls` to understand structure
-4. **Search** — `hce search "concept"` to discover where things live
-5. **Read** — only the files that queries point to
-
-This replaces the usual grep-read-grep-read cycle with targeted, structure-aware
-navigation. For a Django-scale codebase, this means reading 5 files instead of
-50 to understand a feature.
 
 ## Dependencies
 
@@ -264,6 +201,8 @@ Core (always installed):
 - `anthropic` — for summaries
 - `python-dotenv` — env loading
 - `markitdown` — file conversion
+- `tree-sitter` — AST parsing framework
+- `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-typescript`, `tree-sitter-go`, `tree-sitter-rust`, `tree-sitter-java`, `tree-sitter-c`, `tree-sitter-cpp`, `tree-sitter-ruby`, `tree-sitter-php` — language grammars
 
 Optional extras:
 - `[embed]` — `sentence-transformers`, `numpy` (for Tier 4)
