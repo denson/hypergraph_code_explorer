@@ -1,6 +1,6 @@
 # Hypergraph Code Explorer (HCE)
 
-Structural code intelligence for AI agents. HCE indexes a Python codebase into a hypergraph — a graph where edges connect multiple nodes — and provides instant lookups of call chains, inheritance trees, import graphs, and symbol relationships. Zero LLM tokens. Deterministic. Sub-second queries on codebases with 20,000+ nodes.
+Structural code intelligence for AI agents. HCE indexes a multi-language codebase into a hypergraph — a graph where edges connect multiple nodes — and provides instant lookups of call chains, inheritance trees, import graphs, and symbol relationships. Supports Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, and PHP via tree-sitter. Zero LLM tokens. Deterministic. Sub-second queries on codebases with 20,000+ nodes.
 
 ## Why
 
@@ -35,7 +35,7 @@ The `--skip-summaries` flag keeps the entire pipeline zero-cost (no API calls). 
 
 ## What It Indexes
 
-HCE parses Python AST to extract seven types of structural relationships:
+HCE uses tree-sitter to extract seven types of structural relationships from source code:
 
 | Edge Type | What It Captures | Example |
 |-----------|-----------------|---------|
@@ -53,7 +53,7 @@ Each edge is a **hyperedge** — it can connect more than two nodes. This means 
 
 ### `hce index <path>`
 
-Index a Python source directory. Points at the package root (the directory with `__init__.py`), not the repo root.
+Index a source directory. Points at the package root, not the repo root. Supports Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, and PHP.
 
 ```bash
 hce index ./django/django --skip-summaries --verbose
@@ -177,6 +177,6 @@ hce index ../requests/src/requests --skip-summaries
 
 ## Limitations
 
-- **Python only.** HCE parses Python AST. Other languages aren't supported yet.
+- **Supported languages.** Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, and PHP are supported via tree-sitter. Other languages get basic regex extraction (DEFINES + IMPORTS only).
 - **Static analysis.** Dynamic dispatch, monkey-patching, and `getattr()` magic aren't captured.
 - **Structure, not semantics.** The graph tells you *what calls what* but not *why*. You still need to read the code for business logic.

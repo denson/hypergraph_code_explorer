@@ -499,6 +499,6 @@ all = ["hypergraph-code-explorer[embed,server]"]
 
 3. **No scoring.** Tiers 1-3 return deterministic results — a symbol is in the graph or it isn't, BFS reaches a node or it doesn't. No wp, no coverage, no alpha, no confidence tiers. Tier 4 (embedding fallback) ranks by similarity internally but does not expose scores to the consumer. The complex scoring formula from v2 is removed entirely.
 
-4. **Python AST primary, generic extractor incremental.** Keep Python AST as the primary extractor. Improve the regex-based generic extractor over time but don't block v3 on multi-language support. Tiers 1-3 operate on the graph, not source, so they work regardless of language.
+4. **Tree-sitter unified backend.** All languages go through tree-sitter for extraction (Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, PHP). The original Python AST extractor is preserved in `_legacy_python_extractor.py` for reference. A minimal regex fallback handles truly unsupported file types. Tiers 1-3 operate on the graph, not source, so they work regardless of language.
 
 5. **CODEBASE_MAP.md capped for large codebases.** Top 100 symbols by degree, top 20 call chains, top 10 inheritance trees. Full data always available via `hce lookup`, `hce search`, etc. This keeps the map under ~500 lines even for large monorepos.
