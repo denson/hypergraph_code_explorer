@@ -179,36 +179,58 @@ def lookup(
         tiers_used=[1],
     )
 
-    tokens = _tokenise_query(query)
-    if not tokens:
-        return plan
-
     # Build case-insensitive node index
     node_index = _build_node_index(builder)
 
-    # Find exact matches (full dotted name first, then individual tokens)
-    # Also try suffix matching: "session.send" matches "sessions.Session.send"
     matched_nodes: list[str] = []
     matched_set: set[str] = set()
 
-    for token in tokens:
-        # Direct match
-        if token in node_index and node_index[token] not in matched_set:
-            matched_nodes.append(node_index[token])
-            matched_set.add(node_index[token])
-        # Segment match: token matches any segment of a node name.
-        # Always run this even after a direct match, because the direct match
-        # might be a bare import node while the real class/function definition
-        # lives under a module-qualified name (e.g. "fastapi" vs "applications.FastAPI").
-        # Limit to nodes where the token matches the LAST segment (the name itself),
-        # not intermediate package segments, to avoid pulling in every sub-symbol.
+    # --- Phase 0: Try the FULL query as a suffix match before tokenizing ---
+    # This fixes BUG-001: "rebuild_auth" should match
+    # "sessions.SessionRedirectMixin.rebuild_auth" directly, not get split
+    # into ["rebuild", "auth"] where "auth" matches an unrelated symbol.
+    query_lower = query.strip().lower()
+    if query_lower:
+        # Direct exact match
+        if query_lower in node_index and node_index[query_lower] not in matched_set:
+            matched_nodes.append(node_index[query_lower])
+            matched_set.add(node_index[query_lower])
+        # Suffix match: node ends with ".{query}" (the query is the short name)
         for node_lower, node_orig in node_index.items():
             if node_orig in matched_set:
                 continue
             last_segment = node_lower.rsplit(".", 1)[-1]
-            if last_segment == token:
+            if last_segment == query_lower:
                 matched_nodes.append(node_orig)
                 matched_set.add(node_orig)
+
+    # If the full-query suffix match found results, skip tokenized matching.
+    # Only fall back to token-split matching if no suffix match was found.
+    if not matched_nodes:
+        tokens = _tokenise_query(query)
+        if not tokens:
+            return plan
+
+        # Find exact matches (full dotted name first, then individual tokens)
+        # Also try suffix matching: "session.send" matches "sessions.Session.send"
+        for token in tokens:
+            # Direct match
+            if token in node_index and node_index[token] not in matched_set:
+                matched_nodes.append(node_index[token])
+                matched_set.add(node_index[token])
+            # Segment match: token matches any segment of a node name.
+            # Always run this even after a direct match, because the direct match
+            # might be a bare import node while the real class/function definition
+            # lives under a module-qualified name (e.g. "fastapi" vs "applications.FastAPI").
+            # Limit to nodes where the token matches the LAST segment (the name itself),
+            # not intermediate package segments, to avoid pulling in every sub-symbol.
+            for node_lower, node_orig in node_index.items():
+                if node_orig in matched_set:
+                    continue
+                last_segment = node_lower.rsplit(".", 1)[-1]
+                if last_segment == token:
+                    matched_nodes.append(node_orig)
+                    matched_set.add(node_orig)
 
     if not matched_nodes:
         return plan
