@@ -1,39 +1,84 @@
 # Hypergraph Code Explorer (HCE)
 
-Structural code intelligence for AI agents. HCE indexes a multi-language codebase into a hypergraph — a graph where edges connect multiple nodes — and provides instant lookups of call chains, inheritance trees, import graphs, and symbol relationships. Supports Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, and PHP via tree-sitter. Zero LLM tokens. Deterministic. Sub-second queries on codebases with 20,000+ nodes.
+Turn any codebase into an interactive visual map — for humans and AI agents alike. HCE indexes your project's structure — what calls what, what inherits from what, how everything connects — and makes it queryable in milliseconds. For people, it generates a navigable graph with guided tours that explain the architecture. For AI coding agents (Claude Code, Cursor, Codex, Cowork), it replaces expensive file-by-file exploration with instant structural queries, saving significant time and tokens. You don't need to be a programmer to use it. Just point Claude at a codebase and say "visualize this."
 
-## Why
+![HCE visualizing its own codebase — 941 symbols, 1550 edges, with guided tours highlighting the extraction layer, retrieval system, and most important symbols](hypergraph_code_visualization.png)
 
-AI coding agents (Claude Code, Cursor, Codex, Cowork) spend most of their context window figuring out *which files to read*. The usual approach — grep, list files, read one, grep again — burns tokens and context on dead ends. HCE replaces that fumbling with structural queries: "what does this class call?", "who inherits from this?", "where does this symbol live?" — answered in milliseconds from a prebuilt index.
+Supports Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, and PHP — including projects that mix several languages.
 
-## Quick Start
+## Why Hypergraphs? Why AST?
+
+Most tools that help AI understand code work by feeding source files into an LLM and asking it to figure out the structure. That burns tokens — lots of them. For a codebase like Django (1,163 files, 23,000+ symbols), an agent reading files one by one to trace how things connect could easily consume an entire context window and still miss the big picture.
+
+HCE takes a fundamentally different approach. Instead of asking an LLM to *read* the code, it *parses* the code directly using tree-sitter, a fast multi-language AST (Abstract Syntax Tree) parser. Think of an AST as a precise structural blueprint of the code — it knows exactly where every function, class, call, and import is, without guessing. This parsing step is deterministic, costs zero LLM tokens, and finishes in seconds even for large codebases.
+
+The parsed relationships get stored as a **hypergraph** — a graph where a single edge can connect more than two things at once. In a regular graph, you can only say "A calls B." In a hypergraph, one edge can capture "function A calls method B on class C with arguments D and E." This richer representation preserves context that pairwise graphs lose, and it's what makes queries like "what does this class call, two levels deep?" possible in milliseconds.
+
+This project was inspired by [HyperGraphReasoning](https://github.com/lamm-mit/HyperGraphReasoning), which demonstrated the power of hypergraphs for AI reasoning over scientific literature. The key difference: HyperGraphReasoning uses LLM calls to *build* its graphs from documents. HCE doesn't — it uses AST parsing, which means the graph construction itself is free. The LLM tokens you save on indexing are then available for the work that actually matters: understanding the architecture, writing code, and answering questions. The hypergraph becomes a tool the AI agent *uses* rather than a thing it *builds*.
+
+## Install the Skill
+
+HCE works through a **skill** — a set of instructions that teaches Claude how to index codebases and build visualizations. You install the skill once, and then Claude knows how to use HCE whenever you ask.
+
+### Option A: Cowork (desktop app — no coding required)
+
+1. Download this repo (click the green **Code** button on GitHub → **Download ZIP**, or clone it if you're comfortable with git)
+2. Open Cowork and select the folder you downloaded
+3. Tell Claude: **"visualize this codebase"**
+
+Claude will install HCE, index the code, and generate an interactive HTML visualization — all automatically. The skill is already in the `skill/` folder and Cowork picks it up.
+
+To install the skill permanently so it works across any project:
+
+1. Open the `skill/` folder in this repo
+2. Zip its contents into a file called `hce-visualize.skill`
+3. In Cowork, go to **Settings → Skills** and add the `.skill` file
+
+### Option B: Claude Code (terminal)
+
+Copy the skill to your Claude Code skills directory:
 
 ```bash
-# Install
+git clone https://github.com/denson/hypergraph_code_explorer.git
+cp -r hypergraph_code_explorer/skill ~/.claude/skills/hce-visualize
+```
+
+Then in any project, tell Claude Code: **"visualize this codebase"** and the skill takes over.
+
+### What happens when you use it
+
+1. Claude installs HCE (a Python tool) if it isn't already installed
+2. It indexes the codebase — scanning every file to map out symbols, calls, and relationships
+3. It researches the architecture using graph queries (no token-burning file reads)
+4. It designs guided tours explaining the major subsystems
+5. It generates a self-contained HTML file you can open in any browser
+
+The visualization includes search, guided tours with click-to-spotlight, a "Suggest Tours" button for discovering more areas to explore, and a "Copy Prompt for Claude" button that lets you ask Claude for additional tours.
+
+---
+
+## For Developers
+
+Everything below is for people who want to use HCE directly from the command line, integrate it into their own tools, or contribute to the project.
+
+### Quick Start
+
+```bash
 pip install -e .
 
-# Index a codebase (the source root, not the repo root)
+# Index a codebase (point at the source root, not the repo root)
 hce index ./my-project/src/my_package --skip-summaries
 
-# Look up a symbol
-hce lookup MyClass
-
-# See what it calls
-hce lookup MyClass --calls
-
-# Search by concept
-hce search "authentication"
-
-# Natural language query
-hce query "how does request validation work"
-
-# Check the graph stats
+hce lookup MyClass              # find a symbol
+hce lookup MyClass --calls      # what does it call?
+hce search "authentication"     # search by concept
+hce query "how does request validation work"   # natural language
 hce stats --cache-dir ./my-project/src/my_package/.hce_cache
 ```
 
-The `--skip-summaries` flag keeps the entire pipeline zero-cost (no API calls). The index is saved to `.hce_cache/` inside the source root and persists across sessions.
+The `--skip-summaries` flag keeps the entire pipeline zero-cost (no API calls). The index saves to `.hce_cache/` inside the source root and persists across sessions.
 
-## What It Indexes
+### What It Indexes
 
 HCE uses tree-sitter to extract seven types of structural relationships from source code:
 
@@ -47,67 +92,23 @@ HCE uses tree-sitter to extract seven types of structural relationships from sou
 | RAISES | Exceptions raised | `validate()` → `ValidationError` |
 | DECORATES | Decorator usage | `@dataclass` → `Depends` |
 
-Each edge is a **hyperedge** — it can connect more than two nodes. This means a single CALLS edge captures caller, callee, and all arguments, giving richer context than pairwise edges.
+Each edge is a **hyperedge** — it can connect more than two nodes. A single CALLS edge captures caller, callee, and all arguments, giving richer context than pairwise edges.
 
-## Commands
+### Commands
 
-### `hce index <path>`
+**`hce index <path>`** — Index a source directory. Points at the package root, not the repo root. Finding the source root: check `pyproject.toml`, `package.json`, `go.mod`, or `Cargo.toml`.
 
-Index a source directory. Points at the package root, not the repo root. Supports Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, and PHP.
+**`hce lookup <symbol>`** — Exact symbol lookup. Add `--calls` to see what it calls. For class nodes, `--calls` automatically expands through methods.
 
-```bash
-hce index ./django/django --skip-summaries --verbose
-```
+**`hce search "<terms>"`** — Text/substring search across all node names. Good for discovery.
 
-**Finding the source root:** Look at `pyproject.toml` or `setup.py` — they point to the package location. Common patterns: `django/django/`, `fastapi/fastapi/`, `requests/src/requests/`.
+**`hce query "<question>"`** — Natural language query. Runs multi-tier retrieval (exact lookup → structural traversal → text search).
 
-### `hce lookup <symbol>`
+**`hce stats`** — Graph statistics: node count, edge count, edge types, hub nodes.
 
-Exact symbol lookup. Returns files containing the symbol, related symbols (inheritance, imports, definitions), and grep suggestions.
+**`hce overview`** — High-level codebase map: key symbols, call chains, inheritance trees.
 
-```bash
-hce lookup QuerySet                    # find the class
-hce lookup QuerySet --calls            # what does it call?
-hce lookup HttpResponse --cache-dir .  # specify cache location
-```
-
-For class nodes, `--calls` automatically expands through methods to find their call edges.
-
-### `hce search "<terms>"`
-
-Text/substring search across all node names. Good for discovery when you don't know exact symbol names.
-
-```bash
-hce search "middleware"
-hce search "dependency injection"
-```
-
-Directories with 3+ matching files are collapsed into a single entry to reduce noise.
-
-### `hce query "<question>"`
-
-Natural language query. Tokenizes the question, filters stopwords, and runs multi-tier retrieval (exact lookup → structural traversal → text search).
-
-```bash
-hce query "how does the ORM build SQL queries"
-hce query "what middleware handles authentication"
-```
-
-### `hce stats`
-
-Graph statistics: node count, edge count, edge types, hub nodes.
-
-```bash
-hce stats --cache-dir ./django/django/.hce_cache
-```
-
-### `hce overview`
-
-High-level codebase map: key symbols, call chains, inheritance trees.
-
-## Scale
-
-Tested on real codebases:
+### Scale
 
 | Codebase | Files | Nodes | Edges | Hub Nodes | Index Time |
 |----------|-------|-------|-------|-----------|------------|
@@ -115,68 +116,28 @@ Tested on real codebases:
 | FastAPI | 48 | 1,264 | 1,214 | 13 | ~9s |
 | Django | 1,163 | 23,614 | 19,382 | 103 | ~196s |
 
-Hub node filtering uses a hybrid threshold (`min(3% of edges, floor of 50)`) to keep traversals clean at any scale.
+### Optional Features
 
-## Agent Skill
+**Embeddings (Tier 4 semantic search):** `pip install -e ".[embed]"` then `hce embed --cache-dir .hce_cache`
 
-The `skills/hce-index/` directory contains a ready-to-use skill that teaches AI agents to automatically index new codebases and use the graph for navigation.
+**MCP Server:** `pip install -e ".[server]"` then `hce server` — exposes HCE as MCP tools.
 
-**Install for Claude Code (global):**
-```bash
-cp -r skills/hce-index ~/.claude/skills/
-```
+**LLM Summaries:** Run `hce index` without `--skip-summaries` (requires `ANTHROPIC_API_KEY` in `.env`).
 
-**Install for Claude Code (per-project):**
-```bash
-cp -r skills/hce-index .claude/skills/
-```
-
-The skill handles the full workflow: detect that a codebase needs indexing, run the index, read the stats, decide if the graph is worth using, and switch to structural queries for navigation.
-
-## Optional Features
-
-**Embeddings (Tier 4 semantic search):**
-```bash
-pip install -e ".[embed]"
-hce embed --cache-dir .hce_cache
-```
-
-**MCP Server:**
-```bash
-pip install -e ".[server]"
-hce server
-```
-
-Exposes `hce_lookup`, `hce_search`, `hce_query`, `hce_overview`, and `hce_stats` as MCP tools.
-
-**LLM Summaries:**
-```bash
-# Requires ANTHROPIC_API_KEY in .env
-hce index ./my-project/src/my_package   # without --skip-summaries
-```
-
-Generates file-level summaries stored as SUMMARY edges. Useful but costs API tokens.
-
-## Architecture
+### Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for internals: data structures, tiered retrieval system, edge types, module dependency order, and MCP tool schemas.
 
-## Development
+### Development
 
 ```bash
-# Install with dev dependencies
 pip install -e ".[all]"
 pip install pytest
-
-# Run tests (148 passing)
 pytest
-
-# Index the test codebase
-hce index ../requests/src/requests --skip-summaries
 ```
 
-## Limitations
+### Limitations
 
-- **Supported languages.** Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, and PHP are supported via tree-sitter. Other languages get basic regex extraction (DEFINES + IMPORTS only).
+- **Supported languages.** Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, and PHP via tree-sitter. Other languages get basic regex extraction (DEFINES + IMPORTS only).
 - **Static analysis.** Dynamic dispatch, monkey-patching, and `getattr()` magic aren't captured.
 - **Structure, not semantics.** The graph tells you *what calls what* but not *why*. You still need to read the code for business logic.
