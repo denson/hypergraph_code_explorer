@@ -1,0 +1,19 @@
+{
+  "name": "hce-tools",
+  "owner": {
+    "name": "Denson Smith",
+    "email": "densonsmith2@gmail.com"
+  },
+  "metadata": {
+    "description": "Hypergraph Code Explorer plugin for Claude",
+    "version": "0.1.0",
+    "pluginRoot": "./plugin"
+  },
+  "plugins": [
+    {
+      "name": "hce",
+      "source": ".",
+      "description": "Index any codebase into a hypergraph and query its structure via MCP tools"
+    }
+  ]
+}

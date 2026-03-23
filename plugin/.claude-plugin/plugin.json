@@ -1,0 +1,11 @@
+{
+  "name": "hce",
+  "version": "0.1.0",
+  "description": "Hypergraph Code Explorer — index any codebase into a hypergraph and query its structure via MCP tools",
+  "author": {
+    "name": "Denson Smith"
+  },
+  "repository": "https://github.com/denson/hypergraph_code_explorer",
+  "license": "MIT",
+  "keywords": ["code exploration", "hypergraph", "codebase analysis", "tree-sitter", "MCP"]
+}
