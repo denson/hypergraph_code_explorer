@@ -15,73 +15,92 @@ HCE builds a hypergraph of symbols (functions, classes, methods) and their relat
 
 ## IMPORTANT: Always narrate what you are doing
 
-Before every HCE operation, tell the user what you're about to do and why. After each operation, summarize what you found before moving on. This is critical for user trust and transparency.
+Before every HCE operation, tell the user what you're about to do and why. After each operation, summarize what you found before moving on.
 
 Examples of good narration:
 
 - "Let me check if there's an existing HCE index for this repo... No cache found, so I'll index it now."
 - "I'll start with an overview to find the most structurally important symbols."
-- "The overview shows `HypergraphBuilder` is the most central class. Let me trace its outgoing calls to see what it depends on."
-- "Found 15 symbols matching 'auth'. The most connected one is `AuthMiddleware` — let me look at what calls it."
+- "The overview shows `HypergraphBuilder` is the most central class. Let me trace its outgoing calls."
 - "Indexing 47 Python files in the django/ source directory. This will take a moment."
 
 Never silently chain operations. Each step should have a brief explanation of the intent and the finding.
 
-## Choosing the right interface
+## How to use HCE
 
-HCE can be used two ways. Choose based on what's available:
+Use the **Python API** via Bash commands. Do NOT try to use the `hce` CLI command — it has PATH issues on Windows. Do NOT try `python -m hypergraph_code_explorer` — it has no `__main__`. Always use `python -c "..."` with the API directly.
 
-### Option 1: MCP tools (Cowork)
+If HCE MCP tools (`hce_index`, `hce_lookup`, etc.) are available in your tool set, you may use those instead. But the Python API is the primary and most reliable interface.
 
-If MCP tools named `hce_index`, `hce_lookup`, `hce_search`, `hce_query`, `hce_overview`, `hce_stats` are available in your tool set, use them directly. This is the typical path in Cowork sessions. See the "MCP Tools Reference" section below.
+### Ensure HCE is installed
 
-### Option 2: Python API (Claude Code / terminal)
-
-If MCP tools are NOT available, use the Python API via Bash. This is the typical path in Claude Code.
-
-**Step 0: Ensure HCE is installed**
+Run this first. If already installed it returns instantly:
 
 ```bash
 python -c "import hypergraph_code_explorer" 2>/dev/null || pip install "hypergraph-code-explorer @ git+https://github.com/denson/hypergraph_code_explorer.git" --break-system-packages --quiet
 ```
 
-**Indexing:**
+### Check for existing cache
 
-```python
+Before indexing, always check if `.hce_cache/` already exists in the source root:
+
+```bash
+ls <source-root>/.hce_cache/manifest.json 2>/dev/null && echo "CACHE EXISTS" || echo "NO CACHE"
+```
+
+If the cache exists, skip indexing and go straight to loading and querying.
+
+### Index a codebase (only if no cache)
+
+```bash
 python -c "
 from hypergraph_code_explorer.pipeline import HypergraphPipeline
 from hypergraph_code_explorer.codemap import generate_codemap
 p = HypergraphPipeline(verbose=True, skip_summaries=True)
 stats = p.index_directory('<source-root>')
 generate_codemap(p.builder, cache_dir=p._cache_dir)
-print(stats)
+import json; print(json.dumps(stats, indent=2))
 "
 ```
 
-**Loading and querying:**
+Replace `<source-root>` with the actual path. This creates `.hce_cache/` in the source root.
 
-```python
+### Load and query
+
+All queries go through `HypergraphSession`:
+
+```bash
 python -c "
 from hypergraph_code_explorer.api import HypergraphSession
+from hypergraph_code_explorer.retrieval.plan import format_json
 import json
 s = HypergraphSession.load('<source-root>/.hce_cache')
+
+# Pick ONE of these per call:
 print(json.dumps(s.stats(), indent=2))
+# print(json.dumps(s.overview(top=20), indent=2))
+# print(format_json(s.search('term', max_results=20)))
+# print(format_json(s.lookup('SymbolName', edge_types=['CALLS'], depth=2, direction='forward')))
+# print(format_json(s.query('natural language question', depth=2)))
 "
 ```
 
-**Available API methods on HypergraphSession:**
+### API reference
 
-- `s.stats()` — node/edge counts, type breakdown, hub nodes
-- `s.overview(top=20)` — modules and top symbols by centrality
-- `s.search('term', max_results=20)` — text search across symbol names
-- `s.lookup('SymbolName', edge_types=['CALLS'], depth=2, direction='forward')` — structural traversal
-- `s.query('natural language question', depth=2)` — multi-tier retrieval
+**`s.stats()`** — Returns dict with `num_nodes`, `num_edges`, `edge_type_counts`, `hub_nodes`.
 
-**Direction values for lookup:** `'forward'` (calls), `'backward'` (callers), `'both'`
+**`s.overview(top=20)`** — Returns dict with `modules` (file paths) and `key_symbols` (ranked by centrality).
 
-**Edge types:** `'CALLS'`, `'IMPORTS'`, `'INHERITS'`, `'DEFINES'`, `'RAISES'`, `'SIGNATURE'`, `'DECORATES'`
+**`s.search('term', max_results=20)`** — Text search across symbol names. Returns a retrieval plan — use `format_json()` to render.
 
-**Formatting results:** Use `from hypergraph_code_explorer.retrieval.plan import format_json` to get readable output from `lookup`, `search`, and `query` results.
+**`s.lookup('Symbol', edge_types=None, depth=1, direction='both')`** — Structural traversal from a symbol. Returns a retrieval plan.
+- `edge_types`: list of `'CALLS'`, `'IMPORTS'`, `'INHERITS'`, `'DEFINES'`, `'RAISES'`, `'SIGNATURE'`, `'DECORATES'`
+- `direction`: `'forward'` (what it calls), `'backward'` (what calls it), `'both'`
+- `depth`: how many levels to traverse (1-3 recommended)
+
+**`s.query('question', depth=2)`** — Natural language query through multiple retrieval tiers. Returns a retrieval plan.
+
+**`format_json(plan)`** — Converts a retrieval plan to readable JSON string. Import from `hypergraph_code_explorer.retrieval.plan`.
 
 ## Workflow
 
@@ -97,54 +116,34 @@ Point at the directory containing the actual source code, not the repo root:
 
 Check `pyproject.toml`, `package.json`, `go.mod`, or `Cargo.toml` if unsure.
 
-### Step 2: Index (if needed)
+### Step 2: Index or load cache
 
-Check whether a `.hce_cache/` directory already exists in the source root. If it does, tell the user: "Found an existing HCE index — I'll use that." Load from cache instead of re-indexing.
-
-If no cache exists, tell the user you're going to index the codebase, then index it. After indexing, report the results: how many files were indexed, how many symbols and relationships were found.
+Check for `.hce_cache/`. If found, tell the user "Found an existing HCE index — loading from cache." If not, tell the user you're indexing and run the index command. Report results: files indexed, symbols, relationships.
 
 ### Step 3: Explore
 
-Start broad, then narrow. Explain your strategy to the user as you go.
+Start broad, then narrow:
 
-1. **Get the big picture** — `overview(top=20)` shows the most structurally central symbols.
-2. **Search for subsystems** — `search('auth')` finds symbols by name substring.
-3. **Trace relationships** — `lookup('ClassName', edge_types=['CALLS'], depth=2, direction='forward')` shows what a symbol calls.
-4. **Ask questions** — `query('how does request validation work')` for natural language.
-5. **Check stats** — `stats()` for graph size and composition.
+1. **Stats** — Get the scale: `s.stats()`
+2. **Overview** — Find the important symbols: `s.overview(top=20)`
+3. **Search** — Find symbols by name: `s.search('auth')`
+4. **Lookup** — Trace relationships: `s.lookup('Session', edge_types=['CALLS'], depth=2, direction='forward')`
+5. **Query** — Ask questions: `s.query('how does request validation work')`
 
-After each operation, summarize the key findings before deciding the next step.
+After each operation, summarize findings before deciding the next step.
 
 ### Step 4: Read source only when needed
 
-The graph gives you structural answers (what calls what, what inherits from what) without reading files. Only read source code when you need to understand *why* something exists or *what the logic does* — and even then, read only the specific function, not the whole file.
+The graph gives structural answers without reading files. Only read source when you need to understand *why* something exists or *what the logic does* — and even then, read only the specific function.
 
 ## Multiple Codebases
 
-You can work with multiple codebases in a single session by maintaining separate sessions:
+Load separate `HypergraphSession` objects for each repo:
 
-**MCP mode:** Call `hce_index` on each repo. The server maintains a registry — the most recently loaded repo is "active." Calling `hce_index` on a repo with an existing cache loads instantly.
-
-**Python API mode:** Create separate `HypergraphSession` objects for each repo and query them independently.
-
-Tell the user which repo is active when switching between them.
-
-## Cache Reuse
-
-If a repo already has a `.hce_cache/` directory, load from cache instead of re-indexing. This is fast and avoids redundant work. Tell the user: "Found an existing HCE index — loading from cache."
-
-If the user explicitly asks to re-index (e.g., after code changes), delete the `.hce_cache/` directory first, then index again.
-
-## MCP Tools Reference
-
-When MCP tools are available, use these:
-
-- **hce_index(path, skip_summaries=True)** — Index a source directory or load from existing cache.
-- **hce_lookup(symbol, calls, callers, inherits, imports, depth)** — Exact symbol lookup with structural traversal.
-- **hce_search(term, max_results)** — Text search across all symbol names.
-- **hce_query(query, depth)** — Natural language query through multiple retrieval tiers.
-- **hce_overview(top)** — Codebase overview: top symbols by structural centrality.
-- **hce_stats()** — Graph statistics and list of loaded repos.
+```python
+s_requests = HypergraphSession.load('/path/to/requests/src/requests/.hce_cache')
+s_django = HypergraphSession.load('/path/to/django/django/.hce_cache')
+```
 
 ## Supported Languages
 
@@ -152,11 +151,11 @@ Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, PHP. Mixed-languag
 
 ## Tips
 
-- `lookup` with `direction='backward'` answers "what calls this?" — useful for understanding impact.
-- `lookup` with `direction='forward', depth=2` traces two levels of call chains.
-- `overview` ranks by importance: `2 * (calls_degree + inherits_degree) + total_degree`.
-- For large codebases (1000+ nodes), use `search` to narrow before `lookup`.
-- The graph is static analysis — dynamic dispatch and monkey-patching won't appear.
+- `lookup` with `direction='backward'` answers "what calls this?"
+- `lookup` with `direction='forward', depth=2` traces two levels of call chains
+- `overview` ranks by: `2 * (calls_degree + inherits_degree) + total_degree`
+- For large codebases (1000+ nodes), use `search` to narrow before `lookup`
+- The graph is static analysis — dynamic dispatch and monkey-patching won't appear
 
 ## Reference
 
