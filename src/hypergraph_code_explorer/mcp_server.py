@@ -1,9 +1,10 @@
 """
 MCP Server
 ==========
-FastMCP server exposing 5 tools for hypergraph-based code exploration.
+FastMCP server exposing 6 tools for hypergraph-based code exploration.
 
 Tools:
+  - hce_index — index a codebase directory into a hypergraph
   - hce_lookup — exact symbol lookup + structural traversal
   - hce_search — text search across all symbols
   - hce_query — full dispatch query through all tiers
@@ -27,25 +28,88 @@ def create_server():
 
     mcp = FastMCP("hypergraph-code-explorer")
 
-    # Session is loaded lazily
+    # Session is loaded lazily; cache_dir tracks which index is loaded
     _session = None
+    _loaded_cache_dir = None
 
-    def _get_session():
-        nonlocal _session
+    def _get_session(cache_dir: str | None = None):
+        nonlocal _session, _loaded_cache_dir
+
+        # If a specific cache_dir is requested and differs from current, reload
+        if cache_dir:
+            cache_path = Path(cache_dir)
+            if cache_path.exists() and str(cache_path) != _loaded_cache_dir:
+                from .api import HypergraphSession
+                _session = HypergraphSession.load(cache_path)
+                _loaded_cache_dir = str(cache_path)
+                return _session
+
         if _session is None:
             from .api import HypergraphSession
 
-            cache_dir = os.environ.get("HCE_CACHE_DIR")
-            if cache_dir and Path(cache_dir).exists():
-                _session = HypergraphSession.load(cache_dir)
+            env_cache = os.environ.get("HCE_CACHE_DIR")
+            if env_cache and Path(env_cache).exists():
+                _session = HypergraphSession.load(env_cache)
+                _loaded_cache_dir = env_cache
             else:
-                # Look for .hce_cache in current directory
                 cwd_cache = Path.cwd() / ".hce_cache"
                 if cwd_cache.exists():
                     _session = HypergraphSession.load(cwd_cache)
+                    _loaded_cache_dir = str(cwd_cache)
                 else:
                     _session = HypergraphSession()
         return _session
+
+    def _reload_session(cache_dir: str):
+        """Force reload session from a cache directory."""
+        nonlocal _session, _loaded_cache_dir
+        from .api import HypergraphSession
+        _session = HypergraphSession.load(cache_dir)
+        _loaded_cache_dir = cache_dir
+
+    @mcp.tool()
+    def hce_index(
+        path: str,
+        skip_summaries: bool = True,
+    ) -> str:
+        """
+        Index a codebase directory into a hypergraph. Point at the source root
+        (the directory containing the actual source code, e.g. django/django/
+        not django/). Creates a .hce_cache/ directory inside the source root.
+
+        After indexing, all other HCE tools (lookup, search, query, overview,
+        stats) will use this index automatically.
+
+        Args:
+            path: Path to the source directory to index (e.g. "./my-project/src")
+            skip_summaries: Skip LLM-based summaries for zero-cost indexing (default True)
+        """
+        import json
+        from .pipeline import HypergraphPipeline
+        from .codemap import generate_codemap
+
+        source_dir = Path(path).resolve()
+        if not source_dir.is_dir():
+            return json.dumps({"error": f"Directory not found: {path}"})
+
+        pipeline = HypergraphPipeline(
+            verbose=True,
+            skip_summaries=skip_summaries,
+        )
+
+        stats = pipeline.index_directory(str(source_dir))
+        generate_codemap(pipeline.builder, cache_dir=pipeline._cache_dir)
+
+        # Reload the session with the new index
+        cache_dir = str(source_dir / ".hce_cache")
+        _reload_session(cache_dir)
+
+        return json.dumps({
+            "status": "indexed",
+            "path": str(source_dir),
+            "cache_dir": cache_dir,
+            **stats,
+        }, indent=2)
 
     @mcp.tool()
     def hce_lookup(

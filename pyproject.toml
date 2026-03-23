@@ -2,7 +2,9 @@
 name = "hypergraph-code-explorer"
 version = "0.1.0"
 description = "Multi-language hypergraph-based code exploration with edge-intersection traversal, exposed as an MCP server"
-requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "Denson Smith", email = "densonsmith2@gmail.com"}]
+requires-python = ">=3.10"
 dependencies = [
     "anthropic>=0.46.0",
     "python-dotenv>=1.0.0",
