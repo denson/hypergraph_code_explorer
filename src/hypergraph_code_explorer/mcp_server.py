@@ -92,6 +92,16 @@ def create_server():
         if not source_dir.is_dir():
             return json.dumps({"error": f"Directory not found: {path}"})
 
+        # Count files to give a sense of scale
+        source_files = [
+            f for f in source_dir.rglob("*")
+            if f.is_file() and f.suffix in (
+                ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs",
+                ".java", ".c", ".cpp", ".h", ".hpp", ".rb", ".php",
+            )
+        ]
+        msg = [f"Indexing {len(source_files)} source files in {source_dir.name}/..."]
+
         pipeline = HypergraphPipeline(
             verbose=True,
             skip_summaries=skip_summaries,
@@ -104,8 +114,19 @@ def create_server():
         cache_dir = str(source_dir / ".hce_cache")
         _reload_session(cache_dir)
 
+        msg.append(
+            f"Done. Built hypergraph with {stats.get('num_nodes', 0)} symbols "
+            f"and {stats.get('num_edges', 0)} relationships "
+            f"({stats.get('files_indexed', 0)} files indexed)."
+        )
+        edge_types = stats.get("edge_type_counts", {})
+        if edge_types:
+            parts = [f"{v} {k.lower()}" for k, v in edge_types.items()]
+            msg.append(f"Edge breakdown: {', '.join(parts)}.")
+
         return json.dumps({
             "status": "indexed",
+            "message": " ".join(msg),
             "path": str(source_dir),
             "cache_dir": cache_dir,
             **stats,
@@ -132,6 +153,7 @@ def create_server():
             imports: Show import relationships
             depth: Traversal depth for structural expansion (default 1)
         """
+        import json as _json
         from .retrieval.plan import format_json
 
         session = _get_session()
@@ -156,10 +178,28 @@ def create_server():
         elif callers and not calls:
             direction = "backward"
 
+        # Build a description of what we're doing
+        traversals = []
+        if calls:
+            traversals.append("outgoing calls")
+        if callers:
+            traversals.append("callers")
+        if inherits:
+            traversals.append("inheritance")
+        if imports:
+            traversals.append("imports")
+        desc = f"Looking up '{symbol}'"
+        if traversals:
+            desc += f" — traversing {', '.join(traversals)} (depth={depth})"
+
         plan = session.lookup(
             symbol, edge_types=edge_types, depth=depth, direction=direction,
         )
-        return format_json(plan)
+
+        # Parse the result to add a summary line
+        result = _json.loads(format_json(plan))
+        result["_query"] = desc
+        return _json.dumps(result, indent=2)
 
     @mcp.tool()
     def hce_search(
@@ -174,11 +214,14 @@ def create_server():
             term: Search term (e.g. "auth", "send")
             max_results: Maximum number of results (default 20)
         """
+        import json as _json
         from .retrieval.plan import format_json
 
         session = _get_session()
         plan = session.search(term, max_results=max_results)
-        return format_json(plan)
+        result = _json.loads(format_json(plan))
+        result["_query"] = f"Searching for symbols matching '{term}' (max {max_results} results)"
+        return _json.dumps(result, indent=2)
 
     @mcp.tool()
     def hce_query(
@@ -194,11 +237,14 @@ def create_server():
             query: Natural language question about the codebase
             depth: Traversal depth for structural expansion (default 2)
         """
+        import json as _json
         from .retrieval.plan import format_json
 
         session = _get_session()
         plan = session.query(query, depth=depth)
-        return format_json(plan)
+        result = _json.loads(format_json(plan))
+        result["_query"] = f"Querying: '{query}' (traversal depth={depth})"
+        return _json.dumps(result, indent=2)
 
     @mcp.tool()
     def hce_overview(
@@ -214,6 +260,12 @@ def create_server():
         import json
         session = _get_session()
         result = session.overview(top=top)
+        num_modules = len(result.get("modules", []))
+        num_symbols = len(result.get("key_symbols", []))
+        result["_query"] = (
+            f"Codebase overview: {num_modules} modules, "
+            f"top {num_symbols} symbols by structural centrality"
+        )
         return json.dumps(result, indent=2)
 
     @mcp.tool()
@@ -222,6 +274,9 @@ def create_server():
         import json
         session = _get_session()
         result = session.stats()
+        nodes = result.get("num_nodes", 0)
+        edges = result.get("num_edges", 0)
+        result["_query"] = f"Graph stats: {nodes} nodes, {edges} edges"
         return json.dumps(result, indent=2)
 
     return mcp
