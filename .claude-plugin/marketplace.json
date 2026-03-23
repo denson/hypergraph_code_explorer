@@ -6,13 +6,12 @@
   },
   "metadata": {
     "description": "Hypergraph Code Explorer plugin for Claude",
-    "version": "0.1.0",
-    "pluginRoot": "./plugin"
+    "version": "0.1.0"
   },
   "plugins": [
     {
       "name": "hce",
-      "source": ".",
+      "source": "./plugin",
       "description": "Index any codebase into a hypergraph and query its structure via MCP tools"
     }
   ]
