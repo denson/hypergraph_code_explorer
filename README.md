@@ -36,14 +36,50 @@ To install the skill permanently so it works across any project:
 
 ### Option B: Claude Code (terminal)
 
-Copy the skill to your Claude Code skills directory:
+HCE is distributed as a **plugin** through this repo's built-in marketplace. The plugin gives Claude an MCP server with six structural query tools (`hce_index`, `hce_lookup`, `hce_search`, `hce_query`, `hce_overview`, `hce_stats`) plus a skill that teaches it the index-and-query workflow. On first run, it auto-installs HCE from GitHub — no manual setup.
 
-```bash
-git clone https://github.com/denson/hypergraph_code_explorer.git
-cp -r hypergraph_code_explorer/skill ~/.claude/skills/hce-visualize
+**Step 1: Add the marketplace** (one-time)
+
+Open Claude Code and run:
+
+```
+/plugin marketplace add denson/hypergraph_code_explorer
 ```
 
-Then in any project, tell Claude Code: **"visualize this codebase"** and the skill takes over.
+This registers the repo as a plugin source. If the repo is private, you need GitHub credentials configured (SSH key, `gh auth login`, or git credential helper).
+
+**Step 2: Install the plugin**
+
+```
+/plugin install hce@hce-tools
+```
+
+Claude Code will show you three installation scope options:
+
+- **User scope** — Installs globally for your user account. The plugin is available in every project you open. Best for personal use.
+- **Project scope** — Installs for all collaborators on the current repository. Adds the plugin to the project's `.claude/plugins.json`, so anyone who clones the repo gets it automatically. Best for team projects.
+- **Local scope** — Installs only for you, only in the current repository. Doesn't affect other collaborators or other projects. Best for trying it out.
+
+Choose whichever fits your situation. For most users, **user scope** is the right choice.
+
+**Step 3: Use it**
+
+Point Claude Code at any codebase and say: **"use HCE to explore this codebase"** or **"index this repo and show me the architecture."** Claude will automatically index the code and query the hypergraph to answer structural questions.
+
+**Updating the plugin**
+
+When a new version is available, update the marketplace and reinstall:
+
+```
+/plugin marketplace update hce-tools
+/plugin install hce@hce-tools
+```
+
+**Uninstalling**
+
+```
+/plugin uninstall hce
+```
 
 ### What happens when you use it
 
