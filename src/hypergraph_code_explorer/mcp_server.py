@@ -3,8 +3,11 @@ MCP Server
 ==========
 FastMCP server exposing 6 tools for hypergraph-based code exploration.
 
+Supports multiple codebases simultaneously via a session registry.
+Each indexed codebase gets its own session, keyed by source path.
+
 Tools:
-  - hce_index — index a codebase directory into a hypergraph
+  - hce_index — index a codebase directory (or load existing cache)
   - hce_lookup — exact symbol lookup + structural traversal
   - hce_search — text search across all symbols
   - hce_query — full dispatch query through all tiers
@@ -28,44 +31,80 @@ def create_server():
 
     mcp = FastMCP("hypergraph-code-explorer")
 
-    # Session is loaded lazily; cache_dir tracks which index is loaded
-    _session = None
-    _loaded_cache_dir = None
+    # ── Session registry ──────────────────────────────────────────────
+    # Maps resolved source path → loaded HypergraphSession.
+    # Allows multiple codebases to stay loaded in a single server process.
+    _sessions: dict[str, object] = {}
+    _active_path: str | None = None  # most recently used source path
 
-    def _get_session(cache_dir: str | None = None):
-        nonlocal _session, _loaded_cache_dir
+    def _register(source_path: str, session: object):
+        """Add a session to the registry and make it active."""
+        nonlocal _active_path
+        _sessions[source_path] = session
+        _active_path = source_path
 
-        # If a specific cache_dir is requested and differs from current, reload
-        if cache_dir:
-            cache_path = Path(cache_dir)
-            if cache_path.exists() and str(cache_path) != _loaded_cache_dir:
-                from .api import HypergraphSession
-                _session = HypergraphSession.load(cache_path)
-                _loaded_cache_dir = str(cache_path)
-                return _session
+    def _get_session(path: str | None = None):
+        """
+        Get a session by source path.
 
-        if _session is None:
-            from .api import HypergraphSession
-
-            env_cache = os.environ.get("HCE_CACHE_DIR")
-            if env_cache and Path(env_cache).exists():
-                _session = HypergraphSession.load(env_cache)
-                _loaded_cache_dir = env_cache
-            else:
-                cwd_cache = Path.cwd() / ".hce_cache"
-                if cwd_cache.exists():
-                    _session = HypergraphSession.load(cwd_cache)
-                    _loaded_cache_dir = str(cwd_cache)
-                else:
-                    _session = HypergraphSession()
-        return _session
-
-    def _reload_session(cache_dir: str):
-        """Force reload session from a cache directory."""
-        nonlocal _session, _loaded_cache_dir
+        - If path is given and matches a registered session, return it.
+        - If path is given but not registered, try to load from .hce_cache.
+        - If path is None, return the most recently used session.
+        - Falls back to HCE_CACHE_DIR env var or cwd/.hce_cache.
+        """
+        nonlocal _active_path
         from .api import HypergraphSession
-        _session = HypergraphSession.load(cache_dir)
-        _loaded_cache_dir = cache_dir
+
+        # Explicit path requested
+        if path:
+            resolved = str(Path(path).resolve())
+            if resolved in _sessions:
+                _active_path = resolved
+                return _sessions[resolved]
+            # Try loading from cache
+            cache = Path(resolved) / ".hce_cache"
+            if cache.exists():
+                session = HypergraphSession.load(str(cache))
+                _register(resolved, session)
+                return session
+            return None
+
+        # Use active session
+        if _active_path and _active_path in _sessions:
+            return _sessions[_active_path]
+
+        # Bootstrap from environment or cwd
+        env_cache = os.environ.get("HCE_CACHE_DIR")
+        if env_cache and Path(env_cache).exists():
+            session = HypergraphSession.load(env_cache)
+            # Derive source path from cache dir (parent of .hce_cache)
+            source = str(Path(env_cache).parent) if Path(env_cache).name == ".hce_cache" else env_cache
+            _register(source, session)
+            return session
+
+        cwd_cache = Path.cwd() / ".hce_cache"
+        if cwd_cache.exists():
+            session = HypergraphSession.load(str(cwd_cache))
+            _register(str(Path.cwd()), session)
+            return session
+
+        return HypergraphSession()
+
+    def _list_repos() -> list[dict]:
+        """Return info about all loaded repos."""
+        result = []
+        for src_path, session in _sessions.items():
+            stats = session.stats() if hasattr(session, 'stats') else {}
+            result.append({
+                "path": src_path,
+                "name": Path(src_path).name,
+                "active": src_path == _active_path,
+                "nodes": stats.get("num_nodes", 0),
+                "edges": stats.get("num_edges", 0),
+            })
+        return result
+
+    # ── Tools ─────────────────────────────────────────────────────────
 
     @mcp.tool()
     def hce_index(
@@ -80,19 +119,46 @@ def create_server():
         After indexing, all other HCE tools (lookup, search, query, overview,
         stats) will use this index automatically.
 
+        If the directory already contains a .hce_cache/, loads the existing
+        index instead of re-indexing. Use force=True in the path (not yet
+        supported) to re-index.
+
         Args:
             path: Path to the source directory to index (e.g. "./my-project/src")
             skip_summaries: Skip LLM-based summaries for zero-cost indexing (default True)
         """
         import json
-        from .pipeline import HypergraphPipeline
-        from .codemap import generate_codemap
+        from .api import HypergraphSession
 
         source_dir = Path(path).resolve()
         if not source_dir.is_dir():
             return json.dumps({"error": f"Directory not found: {path}"})
 
-        # Count files to give a sense of scale
+        source_key = str(source_dir)
+        cache_dir = source_dir / ".hce_cache"
+
+        # If cache exists, load it instead of re-indexing
+        if cache_dir.exists():
+            session = HypergraphSession.load(str(cache_dir))
+            _register(source_key, session)
+            stats = session.stats()
+            return json.dumps({
+                "status": "loaded_from_cache",
+                "message": (
+                    f"Found existing HCE index for {source_dir.name}/. "
+                    f"Loaded {stats.get('num_nodes', 0)} symbols and "
+                    f"{stats.get('num_edges', 0)} relationships. "
+                    f"Ready to query."
+                ),
+                "path": source_key,
+                "cache_dir": str(cache_dir),
+                **stats,
+            }, indent=2)
+
+        # No cache — index from scratch
+        from .pipeline import HypergraphPipeline
+        from .codemap import generate_codemap
+
         source_files = [
             f for f in source_dir.rglob("*")
             if f.is_file() and f.suffix in (
@@ -110,9 +176,9 @@ def create_server():
         stats = pipeline.index_directory(str(source_dir))
         generate_codemap(pipeline.builder, cache_dir=pipeline._cache_dir)
 
-        # Reload the session with the new index
-        cache_dir = str(source_dir / ".hce_cache")
-        _reload_session(cache_dir)
+        # Load the new index into the registry
+        session = HypergraphSession.load(str(cache_dir))
+        _register(source_key, session)
 
         msg.append(
             f"Done. Built hypergraph with {stats.get('num_nodes', 0)} symbols "
@@ -127,8 +193,8 @@ def create_server():
         return json.dumps({
             "status": "indexed",
             "message": " ".join(msg),
-            "path": str(source_dir),
-            "cache_dir": cache_dir,
+            "path": source_key,
+            "cache_dir": str(cache_dir),
             **stats,
         }, indent=2)
 
@@ -191,12 +257,13 @@ def create_server():
         desc = f"Looking up '{symbol}'"
         if traversals:
             desc += f" — traversing {', '.join(traversals)} (depth={depth})"
+        if _active_path:
+            desc += f" in {Path(_active_path).name}"
 
         plan = session.lookup(
             symbol, edge_types=edge_types, depth=depth, direction=direction,
         )
 
-        # Parse the result to add a summary line
         result = _json.loads(format_json(plan))
         result["_query"] = desc
         return _json.dumps(result, indent=2)
@@ -220,7 +287,8 @@ def create_server():
         session = _get_session()
         plan = session.search(term, max_results=max_results)
         result = _json.loads(format_json(plan))
-        result["_query"] = f"Searching for symbols matching '{term}' (max {max_results} results)"
+        repo_name = Path(_active_path).name if _active_path else "unknown"
+        result["_query"] = f"Searching for '{term}' in {repo_name} (max {max_results} results)"
         return _json.dumps(result, indent=2)
 
     @mcp.tool()
@@ -243,7 +311,8 @@ def create_server():
         session = _get_session()
         plan = session.query(query, depth=depth)
         result = _json.loads(format_json(plan))
-        result["_query"] = f"Querying: '{query}' (traversal depth={depth})"
+        repo_name = Path(_active_path).name if _active_path else "unknown"
+        result["_query"] = f"Querying {repo_name}: '{query}' (depth={depth})"
         return _json.dumps(result, indent=2)
 
     @mcp.tool()
@@ -262,8 +331,9 @@ def create_server():
         result = session.overview(top=top)
         num_modules = len(result.get("modules", []))
         num_symbols = len(result.get("key_symbols", []))
+        repo_name = Path(_active_path).name if _active_path else "unknown"
         result["_query"] = (
-            f"Codebase overview: {num_modules} modules, "
+            f"Overview of {repo_name}: {num_modules} modules, "
             f"top {num_symbols} symbols by structural centrality"
         )
         return json.dumps(result, indent=2)
@@ -276,7 +346,10 @@ def create_server():
         result = session.stats()
         nodes = result.get("num_nodes", 0)
         edges = result.get("num_edges", 0)
-        result["_query"] = f"Graph stats: {nodes} nodes, {edges} edges"
+        repo_name = Path(_active_path).name if _active_path else "unknown"
+        result["_query"] = f"Stats for {repo_name}: {nodes} nodes, {edges} edges"
+        # Include list of all loaded repos
+        result["_loaded_repos"] = _list_repos()
         return json.dumps(result, indent=2)
 
     return mcp

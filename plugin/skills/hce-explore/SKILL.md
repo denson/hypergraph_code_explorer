@@ -80,6 +80,27 @@ After each tool call, summarize the key findings before deciding the next step.
 
 The graph gives you structural answers (what calls what, what inherits from what) without reading files. Only read source code when you need to understand *why* something exists or *what the logic does* — and even then, read only the specific function, not the whole file. Tell the user: "The graph shows the structure, but I need to read the source to understand the logic in [function]."
 
+## Multiple Codebases
+
+The server keeps a registry of all indexed repos. You can work with multiple codebases in a single session:
+
+1. Index repo A: `hce_index(path="/path/to/repo-a/src")`
+2. Query repo A (it's now the active repo): `hce_lookup(symbol="Session")`
+3. Index repo B: `hce_index(path="/path/to/repo-b/src")`
+4. Query repo B (now active): `hce_lookup(symbol="Router")`
+5. Switch back to repo A: `hce_index(path="/path/to/repo-a/src")` — loads from cache instantly
+6. `hce_stats()` shows which repos are loaded and which is active
+
+The most recently indexed or loaded repo is the "active" one that all query tools operate on. Calling `hce_index` on a repo that already has a `.hce_cache` loads it from cache without re-indexing.
+
+Tell the user which repo is active when switching between them: "Switching to the requests codebase" or "Now querying django."
+
+## Cache Reuse
+
+If a repo already has a `.hce_cache/` directory (from a previous indexing session), `hce_index` will load from cache instead of re-indexing. This is fast and avoids redundant work. Tell the user: "Found an existing HCE index — loading from cache."
+
+If the user explicitly asks to re-index (e.g., after code changes), delete the `.hce_cache/` directory first, then call `hce_index` again.
+
 ## Supported Languages
 
 Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, PHP. Mixed-language projects are fully supported.
