@@ -15,7 +15,27 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser(
         prog="hce",
-        description="Hypergraph Code Explorer — structural code intelligence",
+        description="Hypergraph Code Explorer — structural code intelligence.\n\n"
+        "HCE gives you the REVERSE call graph — information that is expensive or\n"
+        "impossible to extract by reading code. Reading code shows you what a function\n"
+        "calls (forward edges). HCE shows you what calls it (backward edges), the\n"
+        "full transitive dependency chain, and which symbols are hubs.\n\n"
+        "USE HCE WHEN YOU NEED TO:\n"
+        "  - Find all callers of a symbol (blast radius / impact analysis)\n"
+        "  - Trace reverse dependencies across multiple hops (--depth 2+)\n"
+        "  - Find all subclasses or implementors of an interface\n"
+        "  - Identify hub symbols that many other modules depend on\n"
+        "  - Get a completeness guarantee (\"ALL callers\", not \"callers grep found\")\n\n"
+        "DON'T USE HCE WHEN:\n"
+        "  - Tracing a call chain forward (just read the code — it's right there)\n"
+        "  - Searching for a string or pattern (use grep)\n"
+        "  - Reading a specific file (use cat/read)\n\n"
+        "TYPICAL WORKFLOW FOR IMPACT ANALYSIS:\n"
+        "  1. hce lookup Symbol --callers --depth 2  (who depends on this?)\n"
+        "  2. hce lookup Symbol --inherits            (what overrides this?)\n"
+        "  3. hce overview --top 20                   (is this a hub node?)\n"
+        "  4. Read the specific files identified to understand the dependency",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -33,22 +53,32 @@ def main():
     index_p.add_argument("--verbose", "-v", action="store_true")
 
     # ---- lookup ----
-    lookup_p = subparsers.add_parser("lookup", help="Look up a symbol in the graph")
-    lookup_p.add_argument("symbol", type=str, help="Symbol name to look up")
-    lookup_p.add_argument("--calls", action="store_true", help="Show what it calls")
-    lookup_p.add_argument("--callers", action="store_true", help="Show what calls it")
-    lookup_p.add_argument("--inherits", action="store_true", help="Show inheritance")
-    lookup_p.add_argument("--imports", action="store_true", help="Show imports")
-    lookup_p.add_argument("--raises", action="store_true", help="Show exceptions raised")
-    lookup_p.add_argument("--depth", type=int, default=1, help="Traversal depth (default: 1)")
+    lookup_p = subparsers.add_parser("lookup",
+        help="Find a symbol's relationships — callers, callees, inheritance, imports")
+    lookup_p.add_argument("symbol", type=str,
+        help="Symbol name (e.g. 'Session.send', 'ValidationError', 'run_validators')")
+    lookup_p.add_argument("--calls", action="store_true",
+        help="What does this symbol call? (forward — usually visible from reading code)")
+    lookup_p.add_argument("--callers", action="store_true",
+        help="What calls this symbol? (reverse — the key thing HCE provides that grep can't)")
+    lookup_p.add_argument("--inherits", action="store_true",
+        help="Inheritance chain — subclasses, base classes, overrides")
+    lookup_p.add_argument("--imports", action="store_true",
+        help="Import relationships — who imports this module/symbol")
+    lookup_p.add_argument("--raises", action="store_true",
+        help="What exceptions does this symbol raise")
+    lookup_p.add_argument("--depth", type=int, default=1,
+        help="How many hops to traverse (default: 1). Use 2+ for transitive dependencies")
     lookup_p.add_argument("--json", action="store_true", dest="json_output",
                           help="Output as JSON")
     lookup_p.add_argument("--cache-dir", type=str, default=None)
     lookup_p.add_argument("--verbose", "-v", action="store_true")
 
     # ---- search ----
-    search_p = subparsers.add_parser("search", help="Text search across symbols")
-    search_p.add_argument("term", type=str, help="Search term")
+    search_p = subparsers.add_parser("search",
+        help="Find symbols by name substring (e.g. 'clean', 'validate', 'error')")
+    search_p.add_argument("term", type=str,
+        help="Substring to match against symbol names, file paths, and relations")
     search_p.add_argument("--type", type=str, default=None,
                           help="Filter by edge type (CALLS, IMPORTS, etc.)")
     search_p.add_argument("--json", action="store_true", dest="json_output")
@@ -56,17 +86,20 @@ def main():
     search_p.add_argument("--verbose", "-v", action="store_true")
 
     # ---- query ----
-    query_p = subparsers.add_parser("query", help="Natural language query")
-    query_p.add_argument("query", type=str, help="Natural language question")
+    query_p = subparsers.add_parser("query",
+        help="Ask a question in plain English (routes through lookup + search automatically)")
+    query_p.add_argument("query", type=str,
+        help="e.g. 'what depends on ValidationError' or 'how is run_validators called'")
     query_p.add_argument("--depth", type=int, default=2, help="Traversal depth")
     query_p.add_argument("--json", action="store_true", dest="json_output")
     query_p.add_argument("--cache-dir", type=str, default=None)
     query_p.add_argument("--verbose", "-v", action="store_true")
 
     # ---- overview ----
-    overview_p = subparsers.add_parser("overview", help="Codebase overview")
+    overview_p = subparsers.add_parser("overview",
+        help="Show most-connected symbols (hub nodes) and module list — start here for orientation")
     overview_p.add_argument("--top", type=int, default=10,
-                            help="Top N symbols by degree")
+        help="How many hub symbols to show (default: 10). Hub nodes have the largest blast radius")
     overview_p.add_argument("--json", action="store_true", dest="json_output")
     overview_p.add_argument("--cache-dir", type=str, default=None)
     overview_p.add_argument("--verbose", "-v", action="store_true")
@@ -86,7 +119,8 @@ def main():
     embed_p.add_argument("--verbose", "-v", action="store_true")
 
     # ---- stats ----
-    stats_p = subparsers.add_parser("stats", help="Show graph statistics")
+    stats_p = subparsers.add_parser("stats",
+        help="Graph size, edge type breakdown, number of hub nodes")
     stats_p.add_argument("--json", action="store_true", dest="json_output")
     stats_p.add_argument("--cache-dir", type=str, default=None)
 
