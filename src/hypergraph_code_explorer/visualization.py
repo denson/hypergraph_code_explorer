@@ -162,17 +162,22 @@ def _compute_hop_distances(
     builder: HypergraphBuilder,
     seed_nodes: set[str],
     allowed_types: set[str],
-    max_hops: int = 2,
+    max_hops: int = 0,
 ) -> dict[str, int]:
-    """BFS from seed nodes, returns {node_id: min_hop_distance}.
+    """BFS from all seed nodes. Returns {node_id: min_hop_distance}.
 
-    Nodes at distance 0 are seeds, 1-max_hops are near neighborhood,
-    anything beyond is not in the returned dict.
+    Distance 0 = seed node. If ``max_hops`` is 0, compute for ALL reachable
+    nodes (unlimited). Otherwise stop at ``max_hops``.
     """
     distances: dict[str, int] = {s: 0 for s in seed_nodes}
     frontier = set(seed_nodes)
+    visited = set(seed_nodes)
+    hop = 0
 
-    for hop in range(1, max_hops + 1):
+    while frontier:
+        hop += 1
+        if max_hops > 0 and hop > max_hops:
+            break
         next_frontier: set[str] = set()
         for eid, rec in builder._edge_store.items():
             if _get_edge_type(rec) not in allowed_types:
@@ -180,118 +185,24 @@ def _compute_hop_distances(
             all_nodes = set(rec.sources) | set(rec.targets)
             if frontier & all_nodes:
                 for n in all_nodes:
-                    if n not in distances:
+                    if n not in visited:
                         distances[n] = hop
+                        visited.add(n)
                         next_frontier.add(n)
         frontier = next_frontier
 
     return distances
 
 
-def _build_cluster_nodes(
-    builder: HypergraphBuilder,
-    near_nodes: set[str],
-    allowed_types: set[str],
-) -> tuple[list[dict], list[dict], dict[str, dict]]:
-    """Build cluster placeholder nodes for far-away nodes.
-
-    Returns:
-        cluster_nodes: list of node dicts for D3 (with cluster fields)
-        cluster_edges: list of edge dicts connecting clusters to near nodes
-        cluster_members: dict mapping cluster_id -> {"nodes": [...], "edges": [...]}
-    """
-    # Single pass: find far nodes and their connections to near nodes
-    far_nodes: dict[str, str] = {}  # node_id -> file_path
-    far_to_near: dict[str, set[str]] = defaultdict(set)  # far_node -> connected near nodes
-
-    for eid, rec in builder._edge_store.items():
-        if _get_edge_type(rec) not in allowed_types:
-            continue
-        all_nodes = set(rec.sources) | set(rec.targets)
-        near_in_edge = all_nodes & near_nodes
-        far_in_edge = all_nodes - near_nodes
-        if near_in_edge and far_in_edge:
-            for n in far_in_edge:
-                far_nodes[n] = rec.source_path or "unknown"
-                far_to_near[n] |= near_in_edge
-
-    # Group by module (file path)
-    module_groups: dict[str, list[str]] = defaultdict(list)
-    for node_id, file_path in far_nodes.items():
-        parts = file_path.replace("\\", "/").split("/")
-        module_key = "/".join(parts[-3:]) if len(parts) >= 3 else file_path
-        module_groups[module_key].append(node_id)
-
-    cluster_nodes: list[dict] = []
-    cluster_edges: list[dict] = []
-    cluster_members: dict[str, dict] = {}
-
-    for module_key, members in module_groups.items():
-        cluster_id = f"__cluster__{hashlib.md5(module_key.encode()).hexdigest()[:12]}"
-
-        # Build member node dicts for expansion
-        member_node_dicts: list[dict] = []
-        for mid in members:
-            label = mid.split(".")[-1] if "." in mid else mid
-            member_node_dicts.append({
-                "id": mid,
-                "label": label,
-                "group": _auto_assign_group(mid, far_nodes.get(mid, "")),
-                "degree": 0,
-                "importance": 1,
-                "language": "python",
-            })
-
-        # Build boundary edges (member <-> near node) for expansion
-        member_edge_dicts: list[dict] = []
-        member_set = set(members)
-        for eid, rec in builder._edge_store.items():
-            etype = _get_edge_type(rec)
-            if etype not in allowed_types:
-                continue
-            all_in_edge = set(rec.sources) | set(rec.targets)
-            if (all_in_edge & member_set) and (all_in_edge & near_nodes):
-                for s in rec.sources:
-                    for t in rec.targets:
-                        if (s in member_set or t in member_set):
-                            member_edge_dicts.append({
-                                "source": s, "target": t,
-                                "type": etype, "file": rec.source_path or "",
-                            })
-
-        cluster_members[cluster_id] = {
-            "nodes": member_node_dicts,
-            "edges": member_edge_dicts,
-        }
-
-        module_label = module_key.split("/")[-1] if "/" in module_key else module_key
-        cluster_nodes.append({
-            "id": cluster_id,
-            "label": f"+{len(members)} in {module_label}",
-            "full_label": f"+{len(members)} nodes in {module_key}",
-            "group": module_key.split("/")[-1] if "/" in module_key else module_key,
-            "importance": min(len(members), 25),
-            "degree": 0,
-            "is_cluster": True,
-            "member_count": len(members),
-            "module_path": module_key,
-            "language": "python",
-            "file": "",
-        })
-
-        # Add edges from cluster to boundary near-nodes
-        connected_near: set[str] = set()
-        for mid in members:
-            connected_near |= far_to_near.get(mid, set())
-        for near_id in connected_near:
-            cluster_edges.append({
-                "source": near_id,
-                "target": cluster_id,
-                "type": "CLUSTER",
-                "file": module_key,
-            })
-
-    return cluster_nodes, cluster_edges, cluster_members
+def _get_hub_nodes(builder: HypergraphBuilder, top: int = 20) -> list[str]:
+    """Return the top N nodes by degree for default fog seeds."""
+    return [
+        node for node, _ in sorted(
+            builder._node_to_edges.items(),
+            key=lambda x: len(x[1]),
+            reverse=True,
+        )[:top]
+    ]
 
 
 def extract_tour_subgraph(
@@ -299,22 +210,23 @@ def extract_tour_subgraph(
     tours: list[MemoryTour],
     *,
     edge_types: set[str] | None = None,
-    max_neighborhood_hops: int = 2,
+    max_neighborhood_hops: int = 0,
 ) -> dict:
-    """Extract a pruned subgraph around tour seed nodes with cluster collapse.
+    """Extract graph data with hop-distance metadata for fog-of-war viz.
 
-    Nodes within ``max_neighborhood_hops`` of any tour node are included as
-    real nodes. Nodes beyond that are collapsed into cluster placeholders
-    grouped by file/module.
+    ALL nodes reachable from tour seeds (within ``max_neighborhood_hops``,
+    or unlimited if 0) are included. Each node carries a ``hop_distance``
+    field that the D3 template uses with the current zoom level to control
+    visibility (fog-of-war effect).
 
     Args:
         edge_types: If provided, only include these edge types (overrides
             the default ``STRUCTURAL_TYPES`` filter).
-        max_neighborhood_hops: How many hops from seed nodes to include
-            as visible (default: 2). Set to -1 to disable pruning.
+        max_neighborhood_hops: Maximum hops to emit (0 = unlimited).
+            Nodes beyond this are hard-pruned from the data.
 
     Returns ``{"nodes": [...], "edges": [...], "group_colors": {...},
-    "cluster_members": {...}}`` in the format expected by the viz template.
+    "hub_nodes": [...]}`` in the format expected by the viz template.
     """
     allowed_types = edge_types if edge_types is not None else STRUCTURAL_TYPES
     seed_nodes = collect_seed_nodes(tours)
@@ -322,15 +234,11 @@ def extract_tour_subgraph(
     # Expand seeds via fuzzy matching
     expanded_seeds = _expand_seeds(builder, seed_nodes)
 
-    # Compute hop distances via BFS
-    if max_neighborhood_hops >= 0:
-        distances = _compute_hop_distances(
-            builder, expanded_seeds, allowed_types, max_neighborhood_hops,
-        )
-        near_nodes = set(distances.keys())
-    else:
-        # Pruning disabled — include all connected nodes (old behavior)
-        near_nodes = None  # sentinel: include everything
+    # Compute hop distances via BFS (unlimited or capped)
+    distances = _compute_hop_distances(
+        builder, expanded_seeds, allowed_types, max_neighborhood_hops,
+    )
+    reachable_nodes = set(distances.keys())
 
     degree: dict[str, int] = defaultdict(int)
     calls_degree: dict[str, int] = defaultdict(int)
@@ -342,14 +250,9 @@ def extract_tour_subgraph(
         etype = _get_edge_type(rec)
         if etype not in allowed_types:
             continue
-        all_nodes = set(rec.sources) | set(rec.targets)
-        # Include edge if at least one node is near (or pruning disabled)
-        if near_nodes is not None and not (all_nodes & near_nodes):
-            continue
-        # Only include edges where BOTH endpoints are near
         for s in rec.sources:
             for t in rec.targets:
-                if near_nodes is not None and (s not in near_nodes or t not in near_nodes):
+                if s not in reachable_nodes or t not in reachable_nodes:
                     continue
                 edges.append({
                     "source": s, "target": t,
@@ -382,7 +285,6 @@ def extract_tour_subgraph(
         group = _auto_assign_group(nid, node_files.get(nid, ""))
         groups_seen.add(group)
         label = nid.split(".")[-1] if "." in nid else nid
-        hop = distances.get(nid, -1) if max_neighborhood_hops >= 0 else 0
         nodes.append({
             "id": nid,
             "label": label,
@@ -390,39 +292,29 @@ def extract_tour_subgraph(
             "degree": d,
             "importance": imp,
             "language": "python",
-            "hop_distance": hop,
-            "is_cluster": False,
+            "hop_distance": distances.get(nid, -1),
         })
 
-    # Build cluster placeholders for far nodes
-    cluster_members: dict[str, dict] = {}
-    if near_nodes is not None:
-        cluster_nodes, cluster_edges, cluster_members = _build_cluster_nodes(
-            builder, near_nodes, allowed_types,
-        )
-        nodes.extend(cluster_nodes)
-        edges.extend(cluster_edges)
-        for cn in cluster_nodes:
-            groups_seen.add(cn["group"])
-
     group_colors = {g: _group_color_from_name(g) for g in sorted(groups_seen)}
+    hub_nodes = _get_hub_nodes(builder, top=20)
 
     return {
         "nodes": nodes,
         "edges": edges,
         "group_colors": group_colors,
-        "cluster_members": cluster_members,
+        "hub_nodes": hub_nodes,
     }
 
 
 def extract_full_graph(builder: HypergraphBuilder) -> dict:
     """Extract ALL nodes and edges from the builder for full-graph viz.
 
-    No tour filtering — includes everything. The D3 template handles
-    visual triage via importance-based sizing/opacity.
+    No tour filtering — includes everything. Hub nodes (top 20 by degree)
+    are used as default fog seeds, so the D3 template can show them as
+    the always-visible anchors with fog-of-war on everything else.
 
-    Returns ``{"nodes": [...], "edges": [...], "group_colors": {...}}``
-    in the format expected by the viz template injection pipeline.
+    Returns ``{"nodes": [...], "edges": [...], "group_colors": {...},
+    "hub_nodes": [...]}`` in the format expected by the viz template.
     """
     degree: dict[str, int] = defaultdict(int)
     calls_degree: dict[str, int] = defaultdict(int)
@@ -460,11 +352,20 @@ def extract_full_graph(builder: HypergraphBuilder) -> dict:
         all_node_ids.add(e["source"])
         all_node_ids.add(e["target"])
 
+    # Hub nodes as default fog seeds
+    hub_nodes = _get_hub_nodes(builder, top=20)
+    hub_set = set(hub_nodes)
+
+    # Compute hop distances from hub nodes for fog-of-war
+    distances = _compute_hop_distances(builder, hub_set, STRUCTURAL_TYPES)
+
     groups_seen: set[str] = set()
     nodes: list[dict] = []
     for nid in sorted(all_node_ids):
         d = degree.get(nid, 0)
         imp = 2 * (calls_degree.get(nid, 0) + inherits_degree.get(nid, 0)) + d
+        if nid in hub_set:
+            imp = max(imp, 15)
         group = _auto_assign_group(nid, node_files.get(nid, ""))
         groups_seen.add(group)
         label = nid.split(".")[-1] if "." in nid else nid
@@ -475,11 +376,17 @@ def extract_full_graph(builder: HypergraphBuilder) -> dict:
             "degree": d,
             "importance": imp,
             "language": "python",
+            "hop_distance": distances.get(nid, -1),
         })
 
     group_colors = {g: _group_color_from_name(g) for g in sorted(groups_seen)}
 
-    return {"nodes": nodes, "edges": edges, "group_colors": group_colors}
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "group_colors": group_colors,
+        "hub_nodes": hub_nodes,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -577,11 +484,8 @@ def _minify_data(graph_data: dict) -> dict:
             "p": n["importance"],
             "ln": n.get("language", "other"),
         }
-        if n.get("is_cluster"):
-            nd["c"] = True
-            nd["mc"] = n["member_count"]
-            nd["fl"] = n.get("full_label", "")
-            nd["mp"] = n.get("module_path", "")
+        if "hop_distance" in n:
+            nd["h"] = n["hop_distance"]
         nodes.append(nd)
     edges = [{
         "s": e["source"],
@@ -592,23 +496,10 @@ def _minify_data(graph_data: dict) -> dict:
 
     result: dict = {"n": nodes, "e": edges}
 
-    # Minify cluster member data for click-to-expand
-    cm = graph_data.get("cluster_members", {})
-    if cm:
-        minified_cm: dict = {}
-        for cid, data in cm.items():
-            minified_cm[cid] = {
-                "n": [{
-                    "i": mn["id"], "l": mn["label"], "g": mn["group"],
-                    "d": mn["degree"], "p": mn["importance"],
-                    "ln": mn.get("language", "other"),
-                } for mn in data["nodes"]],
-                "e": [{
-                    "s": me["source"], "t": me["target"],
-                    "y": me["type"], "f": me.get("file", ""),
-                } for me in data["edges"]],
-            }
-        result["cm"] = minified_cm
+    # Pass through hub nodes for default fog seeds
+    hub = graph_data.get("hub_nodes", [])
+    if hub:
+        result["hubs"] = hub
 
     return result
 
@@ -755,8 +646,10 @@ def generate_report(
     *,
     title: str = "Memory Tour Report",
     target_codebase: str = "",
-    cluster_count: int = 0,
-    clustered_node_count: int = 0,
+    total_nodes: int = 0,
+    tour_nodes: int = 0,
+    near_nodes: int = 0,
+    far_nodes: int = 0,
 ) -> Path:
     """Generate a markdown report from memory tours.
 
@@ -783,10 +676,12 @@ def generate_report(
     lines.append(f"**Total steps**: {total_steps}")
     if unique_files:
         lines.append(f"**Unique files touched**: ~{len(unique_files)}")
-    if cluster_count:
+    if total_nodes:
         lines.append(
-            f"**Graph pruning**: Collapsed {clustered_node_count:,} nodes "
-            f"into {cluster_count} module clusters"
+            f"**Graph fog**: Showing {total_nodes:,} nodes total. "
+            f"{tour_nodes} tour nodes (always visible), "
+            f"~{near_nodes:,} within 2 hops (revealed on medium zoom), "
+            f"~{far_nodes:,} in fog (revealed on close zoom)."
         )
     lines.append("")
     lines.append("---")
@@ -947,7 +842,7 @@ def generate_visualization(
     *,
     tours: list[MemoryTour] | None = None,
     edge_types: set[str] | None = None,
-    max_neighborhood_hops: int = 2,
+    max_neighborhood_hops: int = 0,
     title: str = "Codebase Architecture",
     template_path: str | Path | None = None,
     target_codebase: str = "",
@@ -958,6 +853,9 @@ def generate_visualization(
     both HTML and a markdown report. If ``tours`` is None or empty,
     visualizes the full graph (HTML only, no markdown report).
 
+    All nodes carry ``hop_distance`` metadata. The D3 template uses this
+    with the current zoom level to control visibility (fog-of-war effect).
+
     Args:
         builder: The loaded HypergraphBuilder.
         output_base: Base path without extension. Writes ``<base>.html``
@@ -965,15 +863,15 @@ def generate_visualization(
         tours: Optional memory tours to overlay as guided walks.
         edge_types: If provided, only include these edge types in the
             subgraph (overrides the default structural types filter).
-        max_neighborhood_hops: How many hops from tour nodes to include
-            as visible (default: 2). Nodes beyond are cluster-collapsed.
+        max_neighborhood_hops: Maximum hops to emit (0 = unlimited).
+            Nodes beyond are hard-pruned from the data.
         title: Title for both outputs.
         template_path: Override path to ``viz_template.html``.
         target_codebase: Codebase name for the markdown report header.
 
     Returns:
         Dict with keys: ``html``, ``md`` (or None), ``tours``, ``nodes``,
-        ``edges``, ``clusters``.
+        ``edges``, ``fog_tour_nodes``, ``fog_near``, ``fog_far``.
     """
     output_base = Path(output_base)
     html_path = output_base.with_suffix(".html")
@@ -995,11 +893,11 @@ def generate_visualization(
         title=title, template_path=template_path,
     )
 
-    cluster_members = graph_data.get("cluster_members", {})
-    cluster_count = len(cluster_members)
-    clustered_node_count = sum(
-        len(v["nodes"]) for v in cluster_members.values()
-    )
+    # Compute fog stats from hop distances
+    all_nodes = graph_data["nodes"]
+    tour_nodes = sum(1 for n in all_nodes if n.get("hop_distance", -1) == 0)
+    near_nodes = sum(1 for n in all_nodes if 0 < n.get("hop_distance", -1) <= 2)
+    far_nodes = sum(1 for n in all_nodes if n.get("hop_distance", -1) > 2 or n.get("hop_distance", -1) == -1)
 
     md_out = None
     if tours:
@@ -1009,17 +907,19 @@ def generate_visualization(
             tours, md_path,
             title=report_title,
             target_codebase=target_codebase,
-            cluster_count=cluster_count,
-            clustered_node_count=clustered_node_count,
+            total_nodes=len(all_nodes),
+            tour_nodes=tour_nodes,
+            near_nodes=near_nodes,
+            far_nodes=far_nodes,
         ))
 
-    real_nodes = sum(1 for n in graph_data["nodes"] if not n.get("is_cluster"))
     return {
         "html": str(html_out),
         "md": md_out,
         "tours": len(tours) if tours else 0,
-        "nodes": real_nodes,
+        "nodes": len(all_nodes),
         "edges": len(graph_data["edges"]),
-        "clusters": cluster_count,
-        "clustered_nodes": clustered_node_count,
+        "fog_tour_nodes": tour_nodes,
+        "fog_near": near_nodes,
+        "fog_far": far_nodes,
     }

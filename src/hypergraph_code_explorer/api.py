@@ -297,11 +297,12 @@ class HypergraphSession:
         falls back to full-graph mode.
 
         Args:
-            max_neighborhood_hops: How many hops from tour nodes to include
-                as visible (default: 2). Nodes beyond are cluster-collapsed.
+            max_neighborhood_hops: Maximum hops to emit (0 = unlimited).
+                Nodes beyond are hard-pruned from the data. The D3 template
+                uses hop_distance + zoom level for fog-of-war visibility.
 
         Returns dict with keys: html, md (or None), tours, nodes, edges,
-        clusters, clustered_nodes.
+        fog_tour_nodes, fog_near, fog_far.
         """
         from .visualization import select_tours, generate_visualization
 

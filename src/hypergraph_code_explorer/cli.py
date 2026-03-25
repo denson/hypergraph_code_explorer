@@ -181,9 +181,9 @@ def main():
     blast_p.add_argument("--task", type=str, default="",
         help="Task description for context queries "
              "(e.g. 'introduce CoercionError subclass')")
-    blast_p.add_argument("--hops", type=int, default=2,
-        help="How many hops from tour nodes to include as visible (default: 2). "
-             "Nodes beyond this are collapsed into cluster placeholders.")
+    blast_p.add_argument("--hops", type=int, default=0,
+        help="Maximum hops from tour nodes to include (default: 0 = unlimited). "
+             "The D3 template uses hop_distance + zoom for fog-of-war visibility.")
     blast_p.add_argument("--output", "-o", type=str, default="blast_analysis",
         help="Output basename (default: blast_analysis)")
     blast_p.add_argument("--cache-dir", type=str, default=None)
@@ -681,8 +681,11 @@ def _run_blast_radius(args):
         max_neighborhood_hops=args.hops,
     )
     node_msg = f"{result['nodes']} nodes, {result['edges']} edges"
-    if result.get("clusters"):
-        node_msg += f", {result['clusters']} clusters ({result['clustered_nodes']} collapsed)"
+    if result.get("fog_tour_nodes"):
+        node_msg += (
+            f" (fog: {result['fog_tour_nodes']} tour, "
+            f"~{result['fog_near']} near, ~{result['fog_far']} in fog)"
+        )
     print(f"  HTML: {result['html']}  ({node_msg})")
     if result["md"]:
         print(f"  Report: {result['md']}")
