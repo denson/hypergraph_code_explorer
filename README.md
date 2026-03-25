@@ -159,6 +159,14 @@ Each edge is a **hyperedge** — it can connect more than two nodes. A single CA
 
 **`hce overview`** — High-level codebase map: key symbols, call chains, inheritance trees.
 
+**`hce tour create "<query>"`** — Create a memory tour from a graph query result. Memory tours persist as agent-facing architectural notes in `.hce_cache/memory_tours.json`. Use `hce tour list` to see saved tours, `hce tour show <id>` to recall one, and `hce tour promote <id>` to mark it as durable memory. Use `hce tour scaffold "<query>"` to generate an LLM prompt for richer tour authoring.
+
+**`hce visualize`** — Generate an interactive D3 visualization and markdown report from memory tours. Tours are the unit of visualization — only the subgraph referenced by selected tours is included, producing focused, navigable graphs rather than overwhelming full-codebase dumps. Filter by tag (`--tags security,auth`) or tour ID (`--tours id1,id2`). Writes both `<output>.html` and `<output>.md` by default.
+
+```bash
+hce visualize --tags security --output security_viz --title "Security Architecture"
+```
+
 ### Scale
 
 | Codebase | Files | Nodes | Edges | Hub Nodes | Index Time |
@@ -174,6 +182,8 @@ Each edge is a **hyperedge** — it can connect more than two nodes. A single CA
 **MCP Server:** `pip install -e ".[server]"` then `hce server` — exposes HCE as MCP tools.
 
 **LLM Summaries:** Run `hce index` without `--skip-summaries` (requires `ANTHROPIC_API_KEY` in `.env`).
+
+**Memory Tours:** `hce tour create "how does auth work"` captures graph query results as persistent architectural notes that agents can recall across sessions. Tours are ephemeral by default and can be promoted to durable memory. Use `hce visualize` to generate interactive D3 HTML visualizations and markdown reports from tours. No extra dependencies. See [ARCHITECTURE.md](ARCHITECTURE.md#memory-tours) for details.
 
 ### Architecture
 

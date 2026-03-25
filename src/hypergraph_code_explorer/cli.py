@@ -1,7 +1,7 @@
 """
 CLI Interface
 =============
-Subcommands: index, lookup, search, query, overview, init, embed, stats, server.
+Subcommands: index, lookup, search, query, overview, init, embed, stats, tour, visualize, server.
 """
 
 from __future__ import annotations
@@ -124,6 +124,67 @@ def main():
     stats_p.add_argument("--json", action="store_true", dest="json_output")
     stats_p.add_argument("--cache-dir", type=str, default=None)
 
+    # ---- tour (memory tours) ----
+    tour_p = subparsers.add_parser("tour",
+        help="Memory tours — persistent agent-facing architectural notes")
+    tour_sub = tour_p.add_subparsers(dest="tour_command", required=True)
+
+    tour_list_p = tour_sub.add_parser("list", help="List memory tours")
+    tour_list_p.add_argument("--tag", type=str, default=None,
+                             help="Filter by tag")
+    tour_list_p.add_argument("--promoted", action="store_true",
+                             help="Show only promoted tours")
+    tour_list_p.add_argument("--json", action="store_true", dest="json_output")
+    tour_list_p.add_argument("--cache-dir", type=str, default=None)
+
+    tour_show_p = tour_sub.add_parser("show", help="Show a memory tour by ID")
+    tour_show_p.add_argument("tour_id", type=str)
+    tour_show_p.add_argument("--json", action="store_true", dest="json_output")
+    tour_show_p.add_argument("--cache-dir", type=str, default=None)
+
+    tour_create_p = tour_sub.add_parser("create",
+        help="Create a memory tour from a query result")
+    tour_create_p.add_argument("query", type=str,
+        help="Query to run; the result is scaffolded into a memory tour")
+    tour_create_p.add_argument("--name", type=str, default="",
+                               help="Tour name (default: derived from query)")
+    tour_create_p.add_argument("--tag", type=str, action="append", default=[],
+                               dest="tags", help="Add a tag (repeatable)")
+    tour_create_p.add_argument("--promote", action="store_true",
+                               help="Mark the tour as promoted immediately")
+    tour_create_p.add_argument("--json", action="store_true", dest="json_output")
+    tour_create_p.add_argument("--cache-dir", type=str, default=None)
+
+    tour_promote_p = tour_sub.add_parser("promote",
+        help="Promote an ephemeral tour to persistent memory")
+    tour_promote_p.add_argument("tour_id", type=str)
+    tour_promote_p.add_argument("--json", action="store_true", dest="json_output")
+    tour_promote_p.add_argument("--cache-dir", type=str, default=None)
+
+    tour_remove_p = tour_sub.add_parser("remove", help="Remove a memory tour")
+    tour_remove_p.add_argument("tour_id", type=str)
+    tour_remove_p.add_argument("--cache-dir", type=str, default=None)
+
+    tour_scaffold_p = tour_sub.add_parser("scaffold",
+        help="Generate LLM prompt scaffold from a query result")
+    tour_scaffold_p.add_argument("query", type=str,
+        help="Query to run; the result is turned into an LLM prompt")
+    tour_scaffold_p.add_argument("--cache-dir", type=str, default=None)
+
+    # ---- visualize ----
+    viz_p = subparsers.add_parser("visualize",
+        help="Generate D3 HTML visualization + markdown report from memory tours")
+    viz_p.add_argument("--tags", type=str, default=None,
+        help="Comma-separated tags to filter tours (e.g. --tags security,auth)")
+    viz_p.add_argument("--tours", type=str, default=None,
+        help="Comma-separated tour IDs for explicit selection (overrides --tags)")
+    viz_p.add_argument("--output", "-o", type=str, default="visualization",
+        help="Output basename without extension (default: visualization). "
+             "Writes <basename>.html and <basename>.md")
+    viz_p.add_argument("--title", type=str, default=None,
+        help="Title for both outputs (default: derived from cache dir)")
+    viz_p.add_argument("--cache-dir", type=str, default=None)
+
     # ---- server ----
     subparsers.add_parser("server", help="Start MCP server")
 
@@ -139,41 +200,39 @@ def main():
         "init": _run_init,
         "embed": _run_embed,
         "stats": _run_stats,
+        "tour": _run_tour,
+        "visualize": _run_visualize,
         "server": _run_server,
     }
     handlers[args.command](args)
 
 
 # ---------------------------------------------------------------------------
-# Helper: load builder from cache
+# Helpers: cache directory resolution
 # ---------------------------------------------------------------------------
 
-def _load_builder(cache_dir: str | None):
-    """Load a HypergraphBuilder from a cache directory.
-
-    Searches up parent directories for .hce_cache if no cache_dir given.
-    """
-    from .graph.builder import HypergraphBuilder
-
+def _resolve_cache_dir(cache_dir: str | None) -> Path:
+    """Resolve the .hce_cache directory, searching parent dirs if needed."""
     if cache_dir:
-        path = Path(cache_dir) / "builder.pkl"
-    else:
-        # Search for .hce_cache in cwd and parent dirs
-        search = Path.cwd()
-        path = None
-        for _ in range(5):
-            candidate = search / ".hce_cache" / "builder.pkl"
-            if candidate.exists():
-                path = candidate
-                break
-            search = search.parent
+        return Path(cache_dir)
 
-        if path is None:
-            print("Error: No cached index found. Run 'hce index <path>' first.",
-                  file=sys.stderr)
-            sys.exit(1)
+    search = Path.cwd()
+    for _ in range(5):
+        candidate = search / ".hce_cache"
+        if candidate.exists():
+            return candidate
+        search = search.parent
 
-    return HypergraphBuilder.load(path)
+    print("Error: No cached index found. Run 'hce index <path>' first.",
+          file=sys.stderr)
+    sys.exit(1)
+
+
+def _load_builder(cache_dir: str | None):
+    """Load a HypergraphBuilder from a cache directory."""
+    from .graph.builder import HypergraphBuilder
+    resolved = _resolve_cache_dir(cache_dir)
+    return HypergraphBuilder.load(resolved / "builder.pkl")
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +499,144 @@ def _run_stats(args):
                     print(f"    {k}: {v}")
             else:
                 print(f"  {key}: {value}")
+
+
+def _run_tour(args):
+    from .memory_tours import MemoryTourStore
+
+    cache_dir = _resolve_cache_dir(args.cache_dir)
+    store = MemoryTourStore(cache_dir)
+
+    sub = args.tour_command
+
+    if sub == "list":
+        tours = store.list_tours(tag=args.tag, promoted_only=args.promoted)
+        if args.json_output:
+            print(json.dumps([t.to_dict() for t in tours], indent=2))
+        else:
+            if not tours:
+                print("No memory tours found.")
+                return
+            print(f"=== Memory Tours ({len(tours)}) ===")
+            for t in tours:
+                promoted = " [promoted]" if t.promoted else ""
+                tags = f"  tags: {', '.join(t.tags)}" if t.tags else ""
+                print(f"  {t.id}  {t.name}{promoted}{tags}")
+                print(f"         {t.summary}")
+                if t.use_count:
+                    print(f"         used {t.use_count}x, last: {t.last_used_at}")
+            print()
+
+    elif sub == "show":
+        tour = store.get(args.tour_id)
+        if tour is None:
+            print(f"Error: tour '{args.tour_id}' not found.", file=sys.stderr)
+            sys.exit(1)
+        store.touch(args.tour_id)
+        if args.json_output:
+            print(json.dumps(tour.to_dict(), indent=2))
+        else:
+            print(f"Tour: {tour.name}")
+            print(f"  ID: {tour.id}")
+            print(f"  Summary: {tour.summary}")
+            if tour.tags:
+                print(f"  Tags: {', '.join(tour.tags)}")
+            print(f"  Promoted: {tour.promoted}")
+            print(f"  Created: {tour.created_at}")
+            if tour.created_from_query:
+                print(f"  Query: {tour.created_from_query}")
+            print(f"  Steps ({len(tour.steps)}):")
+            for i, step in enumerate(tour.steps, 1):
+                file_str = f" ({step.file})" if step.file else ""
+                print(f"    {i}. [{step.node}]{file_str}")
+                print(f"       {step.text}")
+
+    elif sub == "create":
+        builder = _load_builder(args.cache_dir)
+
+        from .retrieval.dispatch import dispatch
+        from .memory_tours import scaffold_from_plan
+
+        plan = dispatch(args.query, builder, depth=2)
+        tour = scaffold_from_plan(plan, name=args.name, tags=args.tags)
+        if args.promote:
+            tour.promoted = True
+        store.add(tour)
+
+        if args.json_output:
+            print(json.dumps(tour.to_dict(), indent=2))
+        else:
+            print(f"Created memory tour: {tour.name}")
+            print(f"  ID: {tour.id}")
+            print(f"  Steps: {len(tour.steps)}")
+            print(f"  Keywords: {', '.join(tour.keywords[:10])}")
+            if tour.promoted:
+                print("  Status: promoted")
+
+    elif sub == "promote":
+        tour = store.promote(args.tour_id)
+        if tour is None:
+            print(f"Error: tour '{args.tour_id}' not found.", file=sys.stderr)
+            sys.exit(1)
+        if args.json_output:
+            print(json.dumps(tour.to_dict(), indent=2))
+        else:
+            print(f"Promoted tour: {tour.name} ({tour.id})")
+
+    elif sub == "remove":
+        ok = store.remove(args.tour_id)
+        if not ok:
+            print(f"Error: tour '{args.tour_id}' not found.", file=sys.stderr)
+            sys.exit(1)
+        print(f"Removed tour {args.tour_id}")
+
+    elif sub == "scaffold":
+        builder = _load_builder(args.cache_dir)
+
+        from .retrieval.dispatch import dispatch
+        from .memory_tours import scaffold_prompt
+
+        plan = dispatch(args.query, builder, depth=2)
+        existing = [t.name for t in store.list_tours()]
+        prompt = scaffold_prompt(plan, existing_tour_names=existing)
+        print(prompt)
+
+
+def _run_visualize(args):
+    from .graph.builder import HypergraphBuilder
+    from .memory_tours import MemoryTourStore
+    from .visualization import select_tours, generate_visualization
+
+    cache_dir = _resolve_cache_dir(args.cache_dir)
+    builder = HypergraphBuilder.load(cache_dir / "builder.pkl")
+    store = MemoryTourStore(cache_dir)
+
+    tags = args.tags.split(",") if args.tags else None
+    tour_ids = args.tours.split(",") if args.tours else None
+
+    tours = select_tours(store, tags=tags, tour_ids=tour_ids)
+    if not tours:
+        print("Error: No memory tours found matching the criteria.", file=sys.stderr)
+        if not tags and not tour_ids:
+            print("  Run 'hce tour create <query>' first to create tours.", file=sys.stderr)
+        sys.exit(1)
+
+    # Derive title from cache dir parent name if not specified
+    title = args.title
+    if not title:
+        title = cache_dir.parent.name if cache_dir.parent.name != ".hce_cache" else "Codebase"
+
+    target_codebase = str(cache_dir.parent) if cache_dir else ""
+
+    result = generate_visualization(
+        builder, tours, args.output,
+        title=title,
+        target_codebase=target_codebase,
+    )
+
+    print(f"Generated visualization from {result['tours']} tours:")
+    print(f"  HTML: {result['html']}  ({result['nodes']} nodes, {result['edges']} edges)")
+    print(f"  Report: {result['md']}")
 
 
 def _run_server(args):

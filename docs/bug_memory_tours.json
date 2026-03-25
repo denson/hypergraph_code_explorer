@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "tours": [
+    {
+      "id": "bug13399_root",
+      "name": "Bug #13399: Form default prefill corrupts model_fields_set",
+      "summary": "When a Pydantic BaseModel is used with Form(), _get_multidict_value prefills missing fields with deepcopy(field.default) before Pydantic ever sees the data. Pydantic then treats every field as explicitly set, so model_fields_set includes all fields — even those the user never submitted. JSON body handling does not prefill defaults, so model_fields_set is correct there. The root cause is _get_multidict_value lines 777-780 in dependencies/utils.py.",
+      "keywords": [
+        "_get_multidict_value",
+        "_extract_form_body",
+        "request_body_to_args",
+        "_validate_value_with_model_field",
+        "get_cached_model_fields",
+        "deepcopy",
+        "field.default",
+        "model_fields_set",
+        "Form",
+        "BaseModel",
+        "FormData",
+        "params.Form"
+      ],
+      "steps": [
+        {
+          "node": "params.Form",
+          "text": "Form is a subclass of Body (which is a subclass of FieldInfo). When a user annotates a parameter as Annotated[ExampleModel, Form()], FastAPI treats the BaseModel as a form-encoded body rather than a JSON body. This is where the two code paths diverge.",
+          "file": "fastapi/params.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "routing.get_request_handler",
+          "text": "In get_request_handler (routing.py ~line 371), is_body_form is set to True when body_field.field_info is an instance of params.Form. This determines whether the request body is read as FormData (request.form()) or JSON (request.json()). For Form models, body becomes a FormData multidict object.",
+          "file": "fastapi/routing.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils.request_body_to_args",
+          "text": "request_body_to_args receives the FormData as received_body. For a single non-embedded BaseModel Form field, it extracts the model's individual fields via get_cached_model_fields (line 970), then passes the FormData to _extract_form_body (line 973). This is the critical branching point: JSON data arrives as a plain dict with only user-supplied keys, but form data goes through field-by-field extraction.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils._extract_form_body",
+          "text": "THE KEY FUNCTION. _extract_form_body iterates over every field in the model (line 918) and calls _get_multidict_value for each one. It builds a dict of field_alias -> value. If _get_multidict_value returns a non-None value (including a prefilled default), it is added to the dict. This means the dict sent to Pydantic validation will contain default values for fields the user never submitted.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils._get_multidict_value",
+          "text": "ROOT CAUSE. When a field's value is None (not present in form data), empty string, or empty sequence, this function checks field.field_info.is_required() (line 777). If the field is NOT required, it returns deepcopy(field.default) (line 780). This pre-fills the default value AS IF the user had submitted it. For JSON bodies this function is never called — the JSON dict simply omits missing keys, and Pydantic handles defaults internally while correctly tracking which fields were set.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "deepcopy",
+          "text": "deepcopy(field.default) at line 780 returns a concrete default value (e.g., True for field_1: bool = True). This value is indistinguishable from a user-submitted value once it enters the dict. The copy is defensive (prevents mutation of the field's default), but the real problem is that any value is returned at all — it should return nothing and let Pydantic fill in the default.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils._validate_value_with_model_field",
+          "text": "Back in request_body_to_args, the pre-filled dict (with default values injected) is passed to _validate_value_with_model_field as the 'value' argument (line 977). Since value is not None (it contains the prefilled defaults), validation proceeds normally via field.validate() — Pydantic instantiates the model with all fields 'present' and marks them all as explicitly set in model_fields_set.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "get_cached_model_fields",
+          "text": "get_cached_model_fields (in _compat/v2.py) extracts ModelField objects from the BaseModel's model_fields. Each ModelField wraps a FieldInfo with its name, annotation, and default. These fields drive the iteration in _extract_form_body — every field in the model is visited, not just the ones present in the form submission.",
+          "file": "fastapi/_compat/v2.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "model_fields_set",
+          "text": "SYMPTOM. Pydantic's model_fields_set tracks which fields were explicitly provided during model construction. For JSON body (POST /body with {}), the model receives an empty dict, Pydantic fills defaults internally, and model_fields_set = set(). For Form body (POST /form with empty data), the model receives {'field_1': True} (prefilled), Pydantic sees field_1 as user-provided, and model_fields_set = {'field_1'}. This breaks any logic that depends on distinguishing user-set vs default values.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": ""
+        }
+      ],
+      "tags": [
+        "bug-13399",
+        "form-handling",
+        "pydantic-metadata"
+      ],
+      "created_from_query": "GitHub issue #13399: Form models lose model_fields_set metadata and enforce validation on defaults",
+      "created_at": "2026-03-25T16:00:00.000000+00:00",
+      "promoted": false,
+      "last_used_at": "",
+      "use_count": 0
+    },
+    {
+      "id": "bug13399_diverge",
+      "name": "Bug #13399: JSON body vs Form body — why they differ",
+      "summary": "Contrasts the JSON and Form code paths in request_body_to_args to show why JSON correctly preserves model_fields_set while Form corrupts it. The divergence occurs because Form data passes through _extract_form_body which calls _get_multidict_value per-field (prefilling defaults), whereas JSON data arrives as a user-supplied dict with no prefilling. The proposed fix (PR #13464) is to stop returning deepcopy(field.default) in _get_multidict_value and instead return None, letting Pydantic handle defaults natively.",
+      "keywords": [
+        "request_body_to_args",
+        "_extract_form_body",
+        "_get_multidict_value",
+        "FormData",
+        "is_body_form",
+        "request.form",
+        "request.json",
+        "body_to_process",
+        "single_not_embedded_field",
+        "model_fields_set",
+        "field.default",
+        "deepcopy"
+      ],
+      "steps": [
+        {
+          "node": "routing.get_request_handler",
+          "text": "BRANCH POINT. is_body_form = isinstance(body_field.field_info, params.Form) at line 371. If True, body = await request.form() returns a FormData (Starlette multidict). If False, body = await request.json() returns a plain dict. This is the first divergence — FormData is a multidict keyed only by actually-submitted fields; a JSON dict is also keyed only by submitted fields. At this point, both representations are correct.",
+          "file": "fastapi/routing.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils.solve_dependencies",
+          "text": "solve_dependencies passes the body (FormData or dict) unchanged to request_body_to_args at line 706. The body has not been modified yet — it still contains only what the user actually submitted.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils.request_body_to_args",
+          "text": "SECOND BRANCH POINT. isinstance(received_body, FormData) at line 968. If True (form), fields_to_extract is populated from the BaseModel via get_cached_model_fields (line 970) and body_to_process is overwritten by _extract_form_body (line 973) — this is where defaults get injected. If False (JSON), body_to_process stays as the original JSON dict with only user-provided keys.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils._extract_form_body",
+          "text": "FORM PATH ONLY. Iterates every field in the model and calls _get_multidict_value for each one (line 919). For missing fields, _get_multidict_value returns deepcopy(field.default). The resulting dict contains ALL fields — both user-submitted and default-prefilled — with no way to distinguish them. This dict replaces body_to_process.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils._validate_value_with_model_field",
+          "text": "CONVERGENCE POINT. Both JSON and Form paths reach _validate_value_with_model_field (line 977 for single-field, line 991 for multi-field). JSON path: value is a dict with only user-submitted keys → Pydantic fills defaults internally → model_fields_set correct. Form path: value is a dict with ALL keys (including prefilled defaults) → Pydantic sees them all as user-provided → model_fields_set wrong.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils._get_multidict_value",
+          "text": "FIX LOCATION. Lines 777-780: when value is missing and field is not required, return deepcopy(field.default). PR #13464 proposes removing this return and instead returning None (bare return), letting Pydantic handle the default value assignment. This makes the Form path behave like the JSON path — only explicitly submitted values reach the model constructor.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils._extract_form_body",
+          "text": "SECONDARY EFFECT. _extract_form_body only adds values to the result dict when value is not None (line 938: 'if value is not None'). If _get_multidict_value returns None instead of the default, missing-but-optional fields will be omitted from the dict entirely — which is exactly what happens in the JSON path. Pydantic then fills in defaults and correctly excludes them from model_fields_set.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "utils.request_params_to_args",
+          "text": "RELATED CONCERN. request_params_to_args (query/header/cookie params) also calls _get_multidict_value (line 825, 853) with the same default-prefilling behavior. The fix to _get_multidict_value would also affect these param types. However, for non-body params, the validation flow is different (individual fields, not a full BaseModel), so the impact differs.",
+          "file": "fastapi/dependencies/utils.py",
+          "edge_type": "CALLS"
+        }
+      ],
+      "tags": [
+        "bug-13399",
+        "form-handling",
+        "pydantic-metadata",
+        "code-path-comparison"
+      ],
+      "created_from_query": "GitHub issue #13399: Why does Form lose model_fields_set but JSON body does not",
+      "created_at": "2026-03-25T16:00:00.000000+00:00",
+      "promoted": false,
+      "last_used_at": "",
+      "use_count": 0
+    }
+  ]
+}

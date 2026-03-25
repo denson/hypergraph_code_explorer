@@ -1,0 +1,1686 @@
+{
+  "version": 1,
+  "tours": [
+    {
+      "id": "36d5d25a9199",
+      "name": "Routing System",
+      "summary": "Query: how does routing work; Classification: identifier, broad, structural; 118 steps, 7 files",
+      "keywords": [
+        "routing",
+        ".routing",
+        "starlette.routing",
+        "applications",
+        "starlette.websockets",
+        "WebSocket",
+        "fastapi.dependencies.models",
+        "Dependant",
+        "fastapi.exceptions",
+        "EndpointContext",
+        "FastAPIError",
+        "RequestValidationError",
+        "ResponseValidationError",
+        "WebSocketRequestValidationError",
+        "starlette.concurrency",
+        "run_in_threadpool",
+        "inspect",
+        "is_async_callable",
+        "contextlib",
+        "annotated_doc",
+        "anyio",
+        "starlette.responses",
+        "JSONResponse",
+        "Response",
+        "StreamingResponse",
+        "starlette.types",
+        "AppType",
+        "ASGIApp",
+        "Receive",
+        "Scope",
+        "fastapi",
+        "params",
+        "typing",
+        "cast",
+        "routing._AsyncLiftContextManager",
+        "routing._wrap_gen_lifespan_context",
+        "routing._merge_lifespan_context",
+        "routing._DefaultLifespan",
+        "routing.serialize_response",
+        "routing._build_response_args",
+        "routing.APIWebSocketRoute",
+        "routing.APIRoute",
+        "routing.APIRouter",
+        "fastapi.sse",
+        "fastapi.types",
+        "IncEx",
+        "AsyncExitStack",
+        "asynccontextmanager",
+        "types",
+        "fastapi.dependencies.utils",
+        "_should_embed_body_fields",
+        "get_dependant",
+        "get_flat_dependant",
+        "fastapi.utils",
+        "create_model_field",
+        "get_value_or_default",
+        "json",
+        "starlette.exceptions",
+        "HTTPException",
+        "functools",
+        "starlette.datastructures",
+        "FormData",
+        "enum",
+        "Enum",
+        "fastapi.datastructures",
+        "Default",
+        "DefaultPlaceholder",
+        "collections.abc",
+        "fastapi._compat",
+        "ModelField",
+        "Undefined",
+        "lenient_issubclass",
+        "starlette",
+        "starlette.requests",
+        "Request",
+        "fastapi.encoders",
+        "jsonable_encoder",
+        "typing_extensions",
+        "deprecated",
+        "websockets",
+        "exception_handlers.websocket_request_validation_exception_handler",
+        "exception_handlers",
+        "utils",
+        "utils.add_param_to_fields",
+        "utils.get_body_field",
+        "utils.solve_dependencies",
+        "utils.get_flat_dependant",
+        "utils.get_flat_params",
+        "utils.get_parameterless_sub_dependant",
+        "utils.get_dependant",
+        "utils._solve_generator",
+        "utils.add_non_field_param_to_dependency",
+        "utils.analyze_param",
+        "utils._extract_form_body",
+        "utils._is_json_field",
+        "utils._validate_value_with_model_field",
+        "utils._get_multidict_value",
+        "utils.get_validation_alias",
+        "utils._should_embed_body_fields",
+        "utils._get_flat_fields_from_params",
+        "utils.request_body_to_args",
+        "utils.is_union_of_base_models",
+        "utils.request_params_to_args",
+        "models",
+        "asyncexitstack",
+        "asyncexitstack.AsyncExitStackMiddleware.__init__",
+        "asyncexitstack.AsyncExitStackMiddleware.__call__",
+        "docs",
+        "docs.get_swagger_ui_html",
+        "oauth2",
+        "oauth2.OAuth2PasswordBearer.__init__",
+        "oauth2.OAuth2AuthorizationCodeBearer.__init__",
+        "oauth2.OAuth2.__init__",
+        "oauth2.OAuth2.make_not_authenticated_error",
+        "shared",
+        "shared.is_bytes_or_nonable_bytes_annotation",
+        "shared._annotation_is_complex",
+        "shared.is_uploadfile_or_nonable_uploadfile_annotation"
+      ],
+      "steps": [
+        {
+          "node": "routing",
+          "text": "routing [imports] -> starlette.websockets, WebSocket",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": ".routing",
+          "text": ".routing [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "starlette.routing",
+          "text": "starlette.routing [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "applications",
+          "text": "applications [imports] -> starlette.datastructures, State",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "starlette.websockets",
+          "text": "starlette.websockets [imported by] -> websockets",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\websockets.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "WebSocket",
+          "text": "WebSocket [imported by] -> __init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\__init__.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "fastapi.dependencies.models",
+          "text": "fastapi.dependencies.models [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "Dependant",
+          "text": "Dependant [parameter of] -> routing.get_websocket_app",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "fastapi.exceptions",
+          "text": "fastapi.exceptions [imported by] -> oauth2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "EndpointContext",
+          "text": "EndpointContext [called by] -> routing.serialize_response",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "FastAPIError",
+          "text": "FastAPIError [inherited by] -> exceptions.PydanticV1NotSupportedError",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "RequestValidationError",
+          "text": "RequestValidationError [parameter of] -> exception_handlers.request_validation_exception_handler",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exception_handlers.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "ResponseValidationError",
+          "text": "ResponseValidationError [raised by] -> routing.serialize_response",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "RAISES"
+        },
+        {
+          "node": "WebSocketRequestValidationError",
+          "text": "WebSocketRequestValidationError [raised by] -> routing.get_websocket_app",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "RAISES"
+        },
+        {
+          "node": "starlette.concurrency",
+          "text": "starlette.concurrency [imported by] -> concurrency",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\concurrency.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "run_in_threadpool",
+          "text": "run_in_threadpool [called by] -> utils.solve_dependencies",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "inspect",
+          "text": "inspect [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "is_async_callable",
+          "text": "is_async_callable [called by] -> routing.APIRouter._startup",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "contextlib",
+          "text": "contextlib [imported by] -> concurrency",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\concurrency.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "annotated_doc",
+          "text": "annotated_doc [imported by] -> sse",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\sse.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "anyio",
+          "text": "anyio [imported by] -> concurrency",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\concurrency.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "starlette.responses",
+          "text": "starlette.responses [imported by] -> responses",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\responses.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "JSONResponse",
+          "text": "JSONResponse [called by] -> applications.FastAPI.setup",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "Response",
+          "text": "Response [imported by] -> __init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\__init__.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "StreamingResponse",
+          "text": "StreamingResponse [inherited by] -> sse.EventSourceResponse",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\sse.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "starlette.types",
+          "text": "starlette.types [imported by] -> asyncexitstack",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\middleware\\asyncexitstack.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "AppType",
+          "text": "AppType [parameter of] -> applications.FastAPI.__init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "ASGIApp",
+          "text": "ASGIApp [parameter of] -> asyncexitstack.AsyncExitStackMiddleware.__init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\middleware\\asyncexitstack.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "Receive",
+          "text": "Receive [parameter of] -> applications.FastAPI.__call__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "Scope",
+          "text": "Scope [parameter of] -> routing.APIWebSocketRoute.matches",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "fastapi",
+          "text": "fastapi [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "params",
+          "text": "params [imports] -> dataclasses, dataclass",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\params.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "typing",
+          "text": "typing [imported by] -> datastructures",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\datastructures.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "cast",
+          "text": "cast [called by] -> utils.get_openapi_operation_request_body",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "routing._AsyncLiftContextManager",
+          "text": "routing._AsyncLiftContextManager [inherits from] -> AbstractAsyncContextManager",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "routing._wrap_gen_lifespan_context",
+          "text": "routing._wrap_gen_lifespan_context [has signature] -> Callable[[Any], Generator[Any, Any, Any]], Callable[[Any], AbstractAsyncContextManager[Any]]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "routing._merge_lifespan_context",
+          "text": "routing._merge_lifespan_context [calls] -> nested_context, original_context",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "routing._DefaultLifespan",
+          "text": "routing._DefaultLifespan [defines] -> routing._DefaultLifespan.__init__, routing._DefaultLifespan.__aenter__, routing._DefaultLifespan.__aexit__, routing._DefaultLifespan.__call__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "routing.serialize_response",
+          "text": "routing.serialize_response [has signature] -> ModelField | None, Any, IncEx | None, IncEx | None, bool, bool, bool, bool, bool, EndpointContext | None, bool, Any",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "routing._build_response_args",
+          "text": "routing._build_response_args [has signature] -> int | None, Any, dict[str, Any]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "routing.APIWebSocketRoute",
+          "text": "routing.APIWebSocketRoute [inherits from] -> routing.WebSocketRoute",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "routing.APIRoute",
+          "text": "routing.APIRoute [parameter of] -> utils.generate_operation_summary",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\utils.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "routing.APIRouter",
+          "text": "routing.APIRouter [defines] -> routing.APIRouter.__init__, routing.APIRouter.route, routing.APIRouter.add_api_route, routing.APIRouter.api_route, routing.APIRouter.add_api_websocket_route, routing.APIRouter.websocket, routing.APIRouter.websocket_route, routing.APIRouter.include_router, routing.APIRouter.get, routing.APIRouter.put, routing.APIRouter.post, routing.APIRouter.delete, routing.APIRouter.options, routing.APIRouter.head, routing.APIRouter.patch, routing.APIRouter.trace, routing.APIRouter._startup, routing.APIRouter._shutdown, routing.APIRouter.add_event_handler",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "fastapi.sse",
+          "text": "fastapi.sse [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "fastapi.types",
+          "text": "fastapi.types [imported by] -> encoders",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\encoders.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "IncEx",
+          "text": "IncEx [imported by] -> types",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\types.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "AsyncExitStack",
+          "text": "AsyncExitStack [called by] -> asyncexitstack.AsyncExitStackMiddleware.__call__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\middleware\\asyncexitstack.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "asynccontextmanager",
+          "text": "asynccontextmanager [called by] -> routing.APIRouter.__init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "types",
+          "text": "types [imported by] -> encoders",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\encoders.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "fastapi.dependencies.utils",
+          "text": "fastapi.dependencies.utils [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "_should_embed_body_fields",
+          "text": "_should_embed_body_fields [called by] -> routing.APIWebSocketRoute.__init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "get_dependant",
+          "text": "get_dependant [called by] -> utils.get_parameterless_sub_dependant",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "get_flat_dependant",
+          "text": "get_flat_dependant [called by] -> utils.get_flat_params",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "fastapi.utils",
+          "text": "fastapi.utils [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "create_model_field",
+          "text": "create_model_field [called by] -> utils.analyze_param",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "get_value_or_default",
+          "text": "get_value_or_default [called by] -> routing.APIRouter.add_api_route",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "json",
+          "text": "json [imported by] -> docs",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\docs.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "starlette.exceptions",
+          "text": "starlette.exceptions [imported by] -> exception_handlers",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exception_handlers.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "HTTPException",
+          "text": "HTTPException [called by] -> api_key.APIKeyBase.make_not_authenticated_error",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\api_key.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "functools",
+          "text": "functools [imported by] -> models",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\models.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "starlette.datastructures",
+          "text": "starlette.datastructures [imported by] -> shared",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\_compat\\shared.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "FormData",
+          "text": "FormData [parameter of] -> utils._extract_form_body",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "enum",
+          "text": "enum [imported by] -> v2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\_compat\\v2.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "Enum",
+          "text": "Enum [inherited by] -> models.SecuritySchemeType",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\models.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "fastapi.datastructures",
+          "text": "fastapi.datastructures [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "Default",
+          "text": "Default [called by] -> routing.APIRouter.api_route",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "DefaultPlaceholder",
+          "text": "DefaultPlaceholder [called by] -> datastructures.Default",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\datastructures.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "collections.abc",
+          "text": "collections.abc [imported by] -> background",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\background.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "fastapi._compat",
+          "text": "fastapi._compat [imported by] -> models",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\models.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "ModelField",
+          "text": "ModelField [parameter of] -> utils._is_json_field",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "Undefined",
+          "text": "Undefined [imported by] -> __init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\_compat\\__init__.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "lenient_issubclass",
+          "text": "lenient_issubclass [called by] -> utils._should_embed_body_fields",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "starlette",
+          "text": "starlette [imported by] -> __init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\__init__.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "starlette.requests",
+          "text": "starlette.requests [imported by] -> open_id_connect_url",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\open_id_connect_url.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "Request",
+          "text": "Request [parameter of] -> oauth2.OAuth2.__call__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "fastapi.encoders",
+          "text": "fastapi.encoders [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "jsonable_encoder",
+          "text": "jsonable_encoder [called by] -> utils.get_openapi_security_definitions",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "typing_extensions",
+          "text": "typing_extensions [imported by] -> param_functions",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\param_functions.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "deprecated",
+          "text": "deprecated [called by] -> param_functions.Header",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\param_functions.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "websockets",
+          "text": "websockets — 17 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/"
+        },
+        {
+          "node": "exception_handlers.websocket_request_validation_exception_handler",
+          "text": "exception_handlers.websocket_request_validation_exception_handler — 17 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/"
+        },
+        {
+          "node": "exception_handlers",
+          "text": "exception_handlers — 17 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/"
+        },
+        {
+          "node": "utils",
+          "text": "utils — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.add_param_to_fields",
+          "text": "utils.add_param_to_fields — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.get_body_field",
+          "text": "utils.get_body_field — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.solve_dependencies",
+          "text": "utils.solve_dependencies — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.get_flat_dependant",
+          "text": "utils.get_flat_dependant — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.get_flat_params",
+          "text": "utils.get_flat_params — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.get_parameterless_sub_dependant",
+          "text": "utils.get_parameterless_sub_dependant — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.get_dependant",
+          "text": "utils.get_dependant — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils._solve_generator",
+          "text": "utils._solve_generator — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.add_non_field_param_to_dependency",
+          "text": "utils.add_non_field_param_to_dependency — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.analyze_param",
+          "text": "utils.analyze_param — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils._extract_form_body",
+          "text": "utils._extract_form_body — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils._is_json_field",
+          "text": "utils._is_json_field — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils._validate_value_with_model_field",
+          "text": "utils._validate_value_with_model_field — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils._get_multidict_value",
+          "text": "utils._get_multidict_value — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.get_validation_alias",
+          "text": "utils.get_validation_alias — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils._should_embed_body_fields",
+          "text": "utils._should_embed_body_fields — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils._get_flat_fields_from_params",
+          "text": "utils._get_flat_fields_from_params — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.request_body_to_args",
+          "text": "utils.request_body_to_args — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.is_union_of_base_models",
+          "text": "utils.is_union_of_base_models — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "utils.request_params_to_args",
+          "text": "utils.request_params_to_args — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py"
+        },
+        {
+          "node": "models",
+          "text": "models — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\models.py"
+        },
+        {
+          "node": "asyncexitstack",
+          "text": "asyncexitstack — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\middleware\\asyncexitstack.py"
+        },
+        {
+          "node": "asyncexitstack.AsyncExitStackMiddleware.__init__",
+          "text": "asyncexitstack.AsyncExitStackMiddleware.__init__ — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\middleware\\asyncexitstack.py"
+        },
+        {
+          "node": "asyncexitstack.AsyncExitStackMiddleware.__call__",
+          "text": "asyncexitstack.AsyncExitStackMiddleware.__call__ — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\middleware\\asyncexitstack.py"
+        },
+        {
+          "node": "docs",
+          "text": "docs — 3 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/openapi/"
+        },
+        {
+          "node": "docs.get_swagger_ui_html",
+          "text": "docs.get_swagger_ui_html — 3 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/openapi/"
+        },
+        {
+          "node": "oauth2",
+          "text": "oauth2 — 4 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/security/"
+        },
+        {
+          "node": "oauth2.OAuth2PasswordBearer.__init__",
+          "text": "oauth2.OAuth2PasswordBearer.__init__ — 4 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/security/"
+        },
+        {
+          "node": "oauth2.OAuth2AuthorizationCodeBearer.__init__",
+          "text": "oauth2.OAuth2AuthorizationCodeBearer.__init__ — 4 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/security/"
+        },
+        {
+          "node": "oauth2.OAuth2.__init__",
+          "text": "oauth2.OAuth2.__init__ — 4 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/security/"
+        },
+        {
+          "node": "oauth2.OAuth2.make_not_authenticated_error",
+          "text": "oauth2.OAuth2.make_not_authenticated_error — 4 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/security/"
+        },
+        {
+          "node": "shared",
+          "text": "shared — 3 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/_compat/"
+        },
+        {
+          "node": "shared.is_bytes_or_nonable_bytes_annotation",
+          "text": "shared.is_bytes_or_nonable_bytes_annotation — 3 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/_compat/"
+        },
+        {
+          "node": "shared._annotation_is_complex",
+          "text": "shared._annotation_is_complex — 3 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/_compat/"
+        },
+        {
+          "node": "shared.is_uploadfile_or_nonable_uploadfile_annotation",
+          "text": "shared.is_uploadfile_or_nonable_uploadfile_annotation — 3 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/_compat/"
+        }
+      ],
+      "tags": [
+        "routing"
+      ],
+      "created_from_query": "how does routing work",
+      "created_at": "2026-03-25T08:08:06.046323+00:00",
+      "promoted": false,
+      "last_used_at": "2026-03-25T08:18:37.225540+00:00",
+      "use_count": 1
+    },
+    {
+      "id": "65d316379306",
+      "name": "DI System",
+      "summary": "Query: how does dependency injection work; Classification: text_search, broad, identifier, structural; 9 steps, 3 files",
+      "keywords": [
+        "DependencyCacheKey",
+        "DependencyScopeError",
+        "utils.add_non_field_param_to_dependency",
+        "list[DependencyCacheKey] | None",
+        "add_non_field_param_to_dependency",
+        "SolvedDependency",
+        "getattr( dependency_overrides_provider, \"dependency_overrides\", {} ).get",
+        "dict[DependencyCacheKey, Any] | None",
+        "exceptions.DependencyScopeError"
+      ],
+      "steps": [
+        {
+          "node": "DependencyCacheKey",
+          "text": "DependencyCacheKey [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\models.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "DependencyScopeError",
+          "text": "DependencyScopeError [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "RAISES"
+        },
+        {
+          "node": "utils.add_non_field_param_to_dependency",
+          "text": "utils.add_non_field_param_to_dependency [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "list[DependencyCacheKey] | None",
+          "text": "list[DependencyCacheKey] | None [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "add_non_field_param_to_dependency",
+          "text": "add_non_field_param_to_dependency [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "SolvedDependency",
+          "text": "SolvedDependency [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "getattr( dependency_overrides_provider, \"dependency_overrides\", {} ).get",
+          "text": "getattr( dependency_overrides_provider, \"dependency_overrides\", {} ).get [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "dict[DependencyCacheKey, Any] | None",
+          "text": "dict[DependencyCacheKey, Any] | None [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "exceptions.DependencyScopeError",
+          "text": "exceptions.DependencyScopeError [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "DEFINES"
+        }
+      ],
+      "tags": [
+        "di"
+      ],
+      "created_from_query": "how does dependency injection work",
+      "created_at": "2026-03-25T08:08:06.064634+00:00",
+      "promoted": false,
+      "last_used_at": "2026-03-25T08:08:31.427398+00:00",
+      "use_count": 1
+    },
+    {
+      "id": "99e511882e60",
+      "name": "Validation",
+      "summary": "Query: how does request validation work; Classification: identifier, broad, structural; 22 steps, 3 files",
+      "keywords": [
+        "Request",
+        "oauth2",
+        "requests",
+        "oauth2.OAuth2.__call__",
+        "exception_handlers.http_exception_handler",
+        "applications",
+        "open_id_connect_url",
+        "routing.request_response",
+        "http.HTTPBearer.__call__",
+        "api_key",
+        "exception_handlers.request_validation_exception_handler",
+        "http",
+        "exception_handlers",
+        "api_key.APIKeyCookie.__call__",
+        "api_key.APIKeyHeader.__call__",
+        "open_id_connect_url.OpenIdConnect.__call__",
+        "api_key.APIKeyQuery.__call__",
+        "http.HTTPDigest.__call__",
+        "http.HTTPBase.__call__",
+        "oauth2.OAuth2PasswordBearer.__call__",
+        "oauth2.OAuth2AuthorizationCodeBearer.__call__",
+        "http.HTTPBasic.__call__"
+      ],
+      "steps": [
+        {
+          "node": "Request",
+          "text": "Request [imported by] -> oauth2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "oauth2",
+          "text": "oauth2 [imports] -> starlette.status, HTTP_401_UNAUTHORIZED",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "requests",
+          "text": "requests [imports] -> starlette.requests, HTTPConnection",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\requests.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "oauth2.OAuth2.__call__",
+          "text": "oauth2.OAuth2.__call__ [defined in] -> oauth2.OAuth2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "exception_handlers.http_exception_handler",
+          "text": "exception_handlers.http_exception_handler [calls] -> JSONResponse, Response, is_body_allowed_for_status_code, getattr",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exception_handlers.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "applications",
+          "text": "applications [imports] -> starlette.datastructures, State",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "open_id_connect_url",
+          "text": "open_id_connect_url [imports] -> starlette.status, HTTP_401_UNAUTHORIZED",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\open_id_connect_url.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "routing.request_response",
+          "text": "routing.request_response [raises] -> FastAPIError",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py",
+          "edge_type": "RAISES"
+        },
+        {
+          "node": "http.HTTPBearer.__call__",
+          "text": "http.HTTPBearer.__call__ [defined in] -> http.HTTPBearer",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\http.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "api_key",
+          "text": "api_key [imports] -> typing, Annotated",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\api_key.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "exception_handlers.request_validation_exception_handler",
+          "text": "exception_handlers.request_validation_exception_handler [calls] -> JSONResponse, jsonable_encoder, exc.errors",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exception_handlers.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "http",
+          "text": "http [imports] -> fastapi.openapi.models, HTTPBaseModel",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\http.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "exception_handlers",
+          "text": "exception_handlers [imports] -> starlette.exceptions, HTTPException",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exception_handlers.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "api_key.APIKeyCookie.__call__",
+          "text": "api_key.APIKeyCookie.__call__ [defined in] -> api_key.APIKeyCookie",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\api_key.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "api_key.APIKeyHeader.__call__",
+          "text": "api_key.APIKeyHeader.__call__ [calls] -> self.check_api_key, request.headers.get",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\api_key.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "open_id_connect_url.OpenIdConnect.__call__",
+          "text": "open_id_connect_url.OpenIdConnect.__call__ [defined in] -> open_id_connect_url.OpenIdConnect",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\open_id_connect_url.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "api_key.APIKeyQuery.__call__",
+          "text": "api_key.APIKeyQuery.__call__ [defined in] -> api_key.APIKeyQuery",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\api_key.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "http.HTTPDigest.__call__",
+          "text": "http.HTTPDigest.__call__ [raises] -> self.make_not_authenticated_error",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\http.py",
+          "edge_type": "RAISES"
+        },
+        {
+          "node": "http.HTTPBase.__call__",
+          "text": "http.HTTPBase.__call__ [raises] -> self.make_not_authenticated_error",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\http.py",
+          "edge_type": "RAISES"
+        },
+        {
+          "node": "oauth2.OAuth2PasswordBearer.__call__",
+          "text": "oauth2.OAuth2PasswordBearer.__call__ [raises] -> self.make_not_authenticated_error",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "RAISES"
+        },
+        {
+          "node": "oauth2.OAuth2AuthorizationCodeBearer.__call__",
+          "text": "oauth2.OAuth2AuthorizationCodeBearer.__call__ [raises] -> self.make_not_authenticated_error",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "RAISES"
+        },
+        {
+          "node": "http.HTTPBasic.__call__",
+          "text": "http.HTTPBasic.__call__ [raises] -> self.make_not_authenticated_error",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\http.py",
+          "edge_type": "RAISES"
+        }
+      ],
+      "tags": [
+        "validation"
+      ],
+      "created_from_query": "how does request validation work",
+      "created_at": "2026-03-25T08:08:06.070678+00:00",
+      "promoted": true,
+      "last_used_at": "2026-03-25T08:08:35.378240+00:00",
+      "use_count": 1
+    },
+    {
+      "id": "0640b09539f3",
+      "name": "Middleware Pipeline",
+      "summary": "Query: how does middleware work; Classification: identifier, broad, structural; 20 steps, 3 files",
+      "keywords": [
+        "Middleware",
+        "starlette.middleware",
+        "applications.FastAPI.middleware",
+        "Callable[[DecoratedCallable], DecoratedCallable]",
+        "applications.FastAPI",
+        "applications",
+        "applications.FastAPI.build_middleware_stack",
+        "routing.APIRouter.put",
+        "routing.APIRouter.get",
+        "routing.APIRouter.api_route",
+        "routing.APIRouter.trace",
+        "routing.APIRouter.head",
+        "routing.APIRouter.websocket",
+        "routing.APIRouter.on_event",
+        "routing.APIRouter.options",
+        "routing.APIRouter.post",
+        "routing.APIRouter.websocket_route",
+        "routing.APIRouter.patch",
+        "routing.APIRouter.delete",
+        "routing.APIRouter.route"
+      ],
+      "steps": [
+        {
+          "node": "Middleware",
+          "text": "Middleware [imported by] -> __init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\middleware\\__init__.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "starlette.middleware",
+          "text": "starlette.middleware [imported by] -> __init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\middleware\\__init__.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "applications.FastAPI.middleware",
+          "text": "applications.FastAPI.middleware [has signature] -> Callable[[DecoratedCallable], DecoratedCallable]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "Callable[[DecoratedCallable], DecoratedCallable]",
+          "text": "Callable[[DecoratedCallable], DecoratedCallable] [parameter of] -> applications.FastAPI.patch",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "applications.FastAPI",
+          "text": "applications.FastAPI [defined in] -> applications",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "applications",
+          "text": "applications [imports] -> starlette.responses, HTMLResponse, JSONResponse, Response",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "applications.FastAPI.build_middleware_stack",
+          "text": "applications.FastAPI.build_middleware_stack [has signature] -> ASGIApp",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "routing.APIRouter.put",
+          "text": "routing.APIRouter.put — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.get",
+          "text": "routing.APIRouter.get — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.api_route",
+          "text": "routing.APIRouter.api_route — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.trace",
+          "text": "routing.APIRouter.trace — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.head",
+          "text": "routing.APIRouter.head — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.websocket",
+          "text": "routing.APIRouter.websocket — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.on_event",
+          "text": "routing.APIRouter.on_event — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.options",
+          "text": "routing.APIRouter.options — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.post",
+          "text": "routing.APIRouter.post — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.websocket_route",
+          "text": "routing.APIRouter.websocket_route — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.patch",
+          "text": "routing.APIRouter.patch — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.delete",
+          "text": "routing.APIRouter.delete — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        },
+        {
+          "node": "routing.APIRouter.route",
+          "text": "routing.APIRouter.route — EdgeType.SIGNATURE edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\routing.py"
+        }
+      ],
+      "tags": [
+        "middleware"
+      ],
+      "created_from_query": "how does middleware work",
+      "created_at": "2026-03-25T08:10:08.174839+00:00",
+      "promoted": false,
+      "last_used_at": "",
+      "use_count": 0
+    },
+    {
+      "id": "9679ae03be49",
+      "name": "Middleware Stack (LLM-authored)",
+      "summary": "FastAPI middleware is a chain of ASGI wrappers. Each middleware wraps the next, forming a pipeline that processes requests inward and responses outward.",
+      "keywords": [
+        "CORSMiddleware",
+        "GZipMiddleware",
+        "AsyncExitStackMiddleware",
+        "TrustedHostMiddleware"
+      ],
+      "steps": [
+        {
+          "node": "cors",
+          "text": "CORSMiddleware wraps the ASGI app to handle cross-origin requests",
+          "file": "middleware/cors.py"
+        },
+        {
+          "node": "asyncexitstack.AsyncExitStackMiddleware",
+          "text": "AsyncExitStackMiddleware manages async context managers across the request lifecycle",
+          "file": "middleware/asyncexitstack.py"
+        },
+        {
+          "node": "gzip",
+          "text": "GZipMiddleware compresses responses above a minimum size threshold",
+          "file": "middleware/gzip.py"
+        },
+        {
+          "node": "trustedhost",
+          "text": "TrustedHostMiddleware validates the Host header against an allowlist",
+          "file": "middleware/trustedhost.py"
+        }
+      ],
+      "tags": [
+        "middleware",
+        "llm-authored"
+      ],
+      "created_from_query": "",
+      "created_at": "2026-03-25T08:10:08.179447+00:00",
+      "promoted": true,
+      "last_used_at": "",
+      "use_count": 0
+    },
+    {
+      "id": "9858f1e4b2a2",
+      "name": "Security: Auth scheme dispatch",
+      "summary": "Query: how does authentication and authorization work; Classification: text_search, broad, identifier, structural; 11 steps, 2 files",
+      "keywords": [
+        "authorization_header_value.partition",
+        "models.OAuthFlowAuthorizationCode",
+        "HTTPAuthorizationCredentials",
+        "OAuth2AuthorizationCodeBearer",
+        "http.HTTPAuthorizationCredentials",
+        "get_authorization_scheme_param",
+        "HTTPAuthorizationCredentials | None",
+        "oauth2.OAuth2AuthorizationCodeBearer",
+        "oauth2.OAuth2AuthorizationCodeBearer.__call__",
+        "oauth2.OAuth2AuthorizationCodeBearer.__init__",
+        "utils.get_authorization_scheme_param"
+      ],
+      "steps": [
+        {
+          "node": "authorization_header_value.partition",
+          "text": "authorization_header_value.partition [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\utils.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "models.OAuthFlowAuthorizationCode",
+          "text": "models.OAuthFlowAuthorizationCode [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\models.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "HTTPAuthorizationCredentials",
+          "text": "HTTPAuthorizationCredentials [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\__init__.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "OAuth2AuthorizationCodeBearer",
+          "text": "OAuth2AuthorizationCodeBearer [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\__init__.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "http.HTTPAuthorizationCredentials",
+          "text": "http.HTTPAuthorizationCredentials [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\http.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "get_authorization_scheme_param",
+          "text": "get_authorization_scheme_param [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\http.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "HTTPAuthorizationCredentials | None",
+          "text": "HTTPAuthorizationCredentials | None [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\http.py",
+          "edge_type": "SIGNATURE"
+        },
+        {
+          "node": "oauth2.OAuth2AuthorizationCodeBearer",
+          "text": "oauth2.OAuth2AuthorizationCodeBearer [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "oauth2.OAuth2AuthorizationCodeBearer.__call__",
+          "text": "oauth2.OAuth2AuthorizationCodeBearer.__call__ [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "RAISES"
+        },
+        {
+          "node": "oauth2.OAuth2AuthorizationCodeBearer.__init__",
+          "text": "oauth2.OAuth2AuthorizationCodeBearer.__init__ [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "utils.get_authorization_scheme_param",
+          "text": "utils.get_authorization_scheme_param [text match]",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\utils.py",
+          "edge_type": "DEFINES"
+        }
+      ],
+      "tags": [
+        "security",
+        "auth"
+      ],
+      "created_from_query": "how does authentication and authorization work",
+      "created_at": "2026-03-25T08:43:48.498989+00:00",
+      "promoted": false,
+      "last_used_at": "",
+      "use_count": 0
+    },
+    {
+      "id": "8087f3be5d25",
+      "name": "Error handling: Exception propagation paths",
+      "summary": "Query: how are exceptions raised and handled; Classification: identifier, structural; 41 steps, 7 files",
+      "keywords": [
+        "exceptions",
+        ".exceptions",
+        "fastapi.exceptions",
+        "starlette.exceptions",
+        "starlette.middleware.exceptions",
+        "applications",
+        "params",
+        "exception_handlers",
+        "responses",
+        "http",
+        "oauth2",
+        "encoders",
+        "api_key",
+        "open_id_connect_url",
+        "exceptions.EndpointContext",
+        "exceptions.HTTPException",
+        "exceptions.WebSocketException",
+        "exceptions.FastAPIError",
+        "exceptions.DependencyScopeError",
+        "exceptions.ValidationException",
+        "exceptions.RequestValidationError",
+        "exceptions.WebSocketRequestValidationError",
+        "exceptions.ResponseValidationError",
+        "exceptions.PydanticV1NotSupportedError",
+        "exceptions.FastAPIDeprecationWarning",
+        "typing",
+        "TypedDict",
+        "pydantic",
+        "BaseModel",
+        "create_model",
+        "annotated_doc",
+        "collections.abc",
+        "param_functions",
+        "models",
+        "shared",
+        "v2",
+        "v2.create_body_model",
+        "models.Example",
+        "models.BaseModelWithConfig",
+        "models.Reference",
+        "models.Discriminator"
+      ],
+      "steps": [
+        {
+          "node": "exceptions",
+          "text": "exceptions [defines] -> exceptions.EndpointContext, exceptions.HTTPException, exceptions.WebSocketException, exceptions.FastAPIError, exceptions.DependencyScopeError, exceptions.ValidationException, exceptions.RequestValidationError, exceptions.WebSocketRequestValidationError, exceptions.ResponseValidationError, exceptions.PydanticV1NotSupportedError, exceptions.FastAPIDeprecationWarning",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": ".exceptions",
+          "text": ".exceptions [imported by] -> __init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\__init__.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "fastapi.exceptions",
+          "text": "fastapi.exceptions [imported by] -> applications",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "starlette.exceptions",
+          "text": "starlette.exceptions [imported by] -> applications",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "starlette.middleware.exceptions",
+          "text": "starlette.middleware.exceptions [imported by] -> applications",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "applications",
+          "text": "applications [imports] -> typing_extensions, deprecated",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\applications.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "params",
+          "text": "params [imported by] -> utils",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\utils.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "exception_handlers",
+          "text": "exception_handlers [imports] -> starlette.requests, Request",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exception_handlers.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "responses",
+          "text": "responses [imports] -> starlette.responses, StreamingResponse",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\responses.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "http",
+          "text": "http [imports] -> fastapi.openapi.models, HTTPBaseModel",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\http.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "oauth2",
+          "text": "oauth2 [defines] -> oauth2.OAuth2PasswordRequestForm, oauth2.OAuth2PasswordRequestFormStrict, oauth2.OAuth2, oauth2.OAuth2PasswordBearer, oauth2.OAuth2AuthorizationCodeBearer, oauth2.SecurityScopes",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\oauth2.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "encoders",
+          "text": "encoders [imports] -> pydantic_core, PydanticUndefinedType",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\encoders.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "api_key",
+          "text": "api_key [imports] -> annotated_doc, Doc",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\api_key.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "open_id_connect_url",
+          "text": "open_id_connect_url [defines] -> open_id_connect_url.OpenIdConnect",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\security\\open_id_connect_url.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "exceptions.EndpointContext",
+          "text": "exceptions.EndpointContext [inherits from] -> TypedDict, total=False",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "exceptions.HTTPException",
+          "text": "exceptions.HTTPException [inherits from] -> StarletteHTTPException",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "exceptions.WebSocketException",
+          "text": "exceptions.WebSocketException [defines] -> exceptions.WebSocketException.__init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "exceptions.FastAPIError",
+          "text": "exceptions.FastAPIError [inherits from] -> RuntimeError",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "exceptions.DependencyScopeError",
+          "text": "exceptions.DependencyScopeError [inherits from] -> FastAPIError",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "exceptions.ValidationException",
+          "text": "exceptions.ValidationException [defines] -> exceptions.ValidationException.__init__, exceptions.ValidationException.errors, exceptions.ValidationException._format_endpoint_context, exceptions.ValidationException.__str__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "exceptions.RequestValidationError",
+          "text": "exceptions.RequestValidationError [inherits from] -> ValidationException",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "exceptions.WebSocketRequestValidationError",
+          "text": "exceptions.WebSocketRequestValidationError [defines] -> exceptions.WebSocketRequestValidationError.__init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "exceptions.ResponseValidationError",
+          "text": "exceptions.ResponseValidationError [defines] -> exceptions.ResponseValidationError.__init__",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "DEFINES"
+        },
+        {
+          "node": "exceptions.PydanticV1NotSupportedError",
+          "text": "exceptions.PydanticV1NotSupportedError [inherits from] -> FastAPIError",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "exceptions.FastAPIDeprecationWarning",
+          "text": "exceptions.FastAPIDeprecationWarning [inherits from] -> UserWarning",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\exceptions.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "typing",
+          "text": "typing [imported by] -> models",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\models.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "TypedDict",
+          "text": "TypedDict [imported by] -> models",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\models.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "pydantic",
+          "text": "pydantic [imported by] -> v2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\_compat\\v2.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "BaseModel",
+          "text": "BaseModel [inherited by] -> models.BaseModelWithConfig",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\openapi\\models.py",
+          "edge_type": "INHERITS"
+        },
+        {
+          "node": "create_model",
+          "text": "create_model [called by] -> v2.create_body_model",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\_compat\\v2.py",
+          "edge_type": "CALLS"
+        },
+        {
+          "node": "annotated_doc",
+          "text": "annotated_doc [imported by] -> background",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\background.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "collections.abc",
+          "text": "collections.abc [imported by] -> models",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\models.py",
+          "edge_type": "IMPORTS"
+        },
+        {
+          "node": "param_functions",
+          "text": "param_functions — 15 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/"
+        },
+        {
+          "node": "models",
+          "text": "models — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\dependencies\\models.py"
+        },
+        {
+          "node": "shared",
+          "text": "shared — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\_compat\\shared.py"
+        },
+        {
+          "node": "v2",
+          "text": "v2 — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\_compat\\v2.py"
+        },
+        {
+          "node": "v2.create_body_model",
+          "text": "v2.create_body_model — EdgeType.IMPORTS edge at depth 2",
+          "file": "C:\\Users\\denso\\claude_projects\\hypergraphs\\hypergraph_code_explorer\\target_repos\\fastapi\\fastapi\\_compat\\v2.py"
+        },
+        {
+          "node": "models.Example",
+          "text": "models.Example — 3 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/openapi/"
+        },
+        {
+          "node": "models.BaseModelWithConfig",
+          "text": "models.BaseModelWithConfig — 3 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/openapi/"
+        },
+        {
+          "node": "models.Reference",
+          "text": "models.Reference — 3 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/openapi/"
+        },
+        {
+          "node": "models.Discriminator",
+          "text": "models.Discriminator — 3 files match",
+          "file": "C:/Users/denso/claude_projects/hypergraphs/hypergraph_code_explorer/target_repos/fastapi/fastapi/openapi/"
+        }
+      ],
+      "tags": [
+        "error-handling",
+        "exceptions"
+      ],
+      "created_from_query": "how are exceptions raised and handled",
+      "created_at": "2026-03-25T08:43:48.509621+00:00",
+      "promoted": false,
+      "last_used_at": "",
+      "use_count": 0
+    },
+    {
+      "id": "1e9746af6287",
+      "name": "Security: Token validation chain",
+      "summary": "Bearer token authentication flows from OAuth2.__call__ through SecurityBase to individual scheme implementations. Each scheme calls make_not_authenticated_error on failure.",
+      "keywords": [
+        "OAuth2",
+        "OAuth2PasswordBearer",
+        "SecurityBase",
+        "HTTPBearer",
+        "make_not_authenticated_error"
+      ],
+      "steps": [
+        {
+          "node": "oauth2.OAuth2.__call__",
+          "text": "Entry point for OAuth2 auth. Extracts the Authorization header and returns the token string. Raises 401 if auto_error=True and no token is present.",
+          "file": "security/oauth2.py"
+        },
+        {
+          "node": "SecurityBase",
+          "text": "Abstract base for all security schemes. Subclasses implement __call__(request) -> credentials | None. Defines make_not_authenticated_error for uniform 401 responses.",
+          "file": "security/base.py"
+        },
+        {
+          "node": "oauth2.OAuth2PasswordBearer.__call__",
+          "text": "Password bearer flow. Reads Authorization header, expects 'Bearer <token>'. Delegates error creation to make_not_authenticated_error.",
+          "file": "security/oauth2.py"
+        },
+        {
+          "node": "http.HTTPBearer.__call__",
+          "text": "HTTP Bearer scheme. Parses Authorization header into scheme + credentials. Returns HTTPAuthorizationCredentials model. Same error path via make_not_authenticated_error.",
+          "file": "security/http.py"
+        },
+        {
+          "node": "api_key.APIKeyHeader.__call__",
+          "text": "API key via header. Reads a named header (default X-API-Key). Different auth mechanism but same error contract via SecurityBase.",
+          "file": "security/api_key.py"
+        }
+      ],
+      "tags": [
+        "security",
+        "auth",
+        "llm-authored"
+      ],
+      "created_from_query": "",
+      "created_at": "2026-03-25T08:43:48.512649+00:00",
+      "promoted": true,
+      "last_used_at": "2026-03-25T08:43:48.517281+00:00",
+      "use_count": 1
+    }
+  ]
+}

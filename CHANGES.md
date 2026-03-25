@@ -1,3 +1,78 @@
+# Changes: Unified visualization — memory tours as the single viz format
+
+Retired the separate viz tour format (`tours.json`) and made memory tours the single canonical format for both agent memory and human-readable visualization. The one-off `docs/generate_bug_viz.py` script that proved the approach has been generalized into a reusable module.
+
+## New files
+
+### `src/hypergraph_code_explorer/visualization.py`
+Core visualization module consolidating logic from `docs/generate_bug_viz.py` and `skill/scripts/generate_viz.py`:
+- `select_tours()` — filter tours from a `MemoryTourStore` by tag or ID
+- `extract_tour_subgraph()` — 1-hop neighborhood extraction from tour seed nodes with importance scoring, seed-node boosting, and auto-assigned groups from file paths
+- `memory_tours_to_viz()` — converts `MemoryTour` objects to the D3 template format with auto-assigned colors from a 12-color palette and symbol highlighting via `<strong class='tc'>` tags
+- `generate_html()` — end-to-end HTML generation (subgraph + tour conversion + template injection)
+- `generate_report()` — markdown report with tour index table, per-tour step listings, tag distribution, type breakdown
+- `generate_visualization()` — top-level orchestrator writing both `.html` and `.md`
+
+## Modified files
+
+### `src/hypergraph_code_explorer/cli.py`
+- Added `hce visualize` subcommand: `hce visualize [--tags t1,t2] [--tours id1,id2] [--output basename] [--title "Title"] [--cache-dir path]`
+- Writes `<basename>.html` (interactive D3) and `<basename>.md` (markdown report) side-by-side
+
+### `src/hypergraph_code_explorer/api.py`
+- Added `HypergraphSession.visualize()` method wrapping the visualization module for programmatic use
+
+## Design decisions
+
+- **Tour-focused subgraphs by default.** Only nodes/edges referenced by selected tours (+ 1-hop neighborhood) are included. Tested: 2 security tours → 199 nodes; all 8 FastAPI tours → 1,275 nodes; full graph = 1,306.
+- **Both outputs by default.** Interactive D3 HTML for exploration, markdown report for text scanning — same command produces both.
+- **Color assignment is automatic.** Tours get colors from a palette indexed by position. Group colors derived from file path directory components via deterministic hash-to-hue mapping.
+- **The D3 template is unchanged.** `viz_template.html` is format-agnostic once data is injected.
+
+## Superseded (not deleted)
+
+- `docs/generate_bug_viz.py` — one-off script, kept for reference
+- `skill/scripts/generate_viz.py` — old generic generator, kept for backward compat
+
+---
+
+# Changes: Memory Tours — persistent agent-facing architectural memory
+
+Agent-facing "memory tours" that capture useful graph query results as persistent, reusable architectural notes. Memory tours access the full graph (all edge types including IMPORTS and SIGNATURE), unlike visualization tours which filter to structural-only. Tours are ephemeral by default and can be promoted to durable memory.
+
+## New files
+
+### `src/hypergraph_code_explorer/memory_tours.py`
+Data model, sidecar persistence, and scaffold functions:
+- `MemoryTourStep` / `MemoryTour` — dataclasses with provenance (query, timestamps, tags, promoted flag, use_count) and full `to_dict`/`from_dict` round-tripping
+- `MemoryTourStore` — file-backed CRUD store persisting to `.hce_cache/memory_tours.json`
+- `scaffold_from_plan()` — derives a memory tour from any `RetrievalPlan` result
+- `scaffold_prompt()` — produces a structured LLM prompt for richer agent-authored tours
+
+### `tests/test_memory_tours.py`
+23 tests covering data model, sidecar persistence, scaffolding, and filtering.
+
+## Modified files
+
+### `src/hypergraph_code_explorer/api.py`
+- `HypergraphSession.__init__` now accepts optional `cache_dir`; `load()` passes the cache directory through
+- Added 7 memory tour methods: `memory_tour_create`, `memory_tour_create_from_dict`, `memory_tour_list`, `memory_tour_get`, `memory_tour_promote`, `memory_tour_remove`, `memory_tour_scaffold_prompt`
+- Lazy `MemoryTourStore` initialization via `_get_tour_store()`
+
+### `src/hypergraph_code_explorer/cli.py`
+- Added `hce tour` subcommand group with 6 sub-subcommands: `list`, `show`, `create`, `promote`, `remove`, `scaffold`
+- Refactored cache-dir resolution into shared `_resolve_cache_dir()` helper used by both builder loading and memory tour loading
+
+## How it works
+
+1. `hce tour create "how does auth work"` runs `dispatch()`, scaffolds a `MemoryTour` from the `RetrievalPlan`, and persists it to `.hce_cache/memory_tours.json`
+2. `hce tour list` / `hce tour show <id>` recall saved tours
+3. `hce tour promote <id>` marks a tour as durable memory
+4. `hce tour scaffold "query"` emits a structured LLM prompt for richer tour authoring
+5. The `HypergraphSession` API exposes the same operations for programmatic / MCP use
+
+---
+
 # Changes: hce-visualize skill overhaul + multi-language visualization
 
 This document summarizes the changes made to the `hypergraph_code_explorer` repo in this session. Use it as context when working on follow-up tasks.

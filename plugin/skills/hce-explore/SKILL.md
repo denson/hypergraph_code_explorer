@@ -102,6 +102,46 @@ print(json.dumps(s.stats(), indent=2))
 
 **`format_json(plan)`** — Converts a retrieval plan to readable JSON string. Import from `hypergraph_code_explorer.retrieval.plan`.
 
+### Memory tours
+
+Memory tours let you persist useful graph query results as reusable architectural notes. For a deeper guide on using tours as structured agent memory (parallel views, multi-agent annotations, composition patterns), see `docs/memory-tours-guide.md`. They access the full graph (all edge types) and carry provenance metadata. Tours are ephemeral by default; promote the useful ones to durable memory.
+
+**`s.memory_tour_create(plan, name='...', tags=['...'])`** — Scaffold a memory tour from a retrieval plan and persist it. Returns a dict with id, steps, keywords, etc.
+
+**`s.memory_tour_list(tag='...', promoted_only=False)`** — List all memory tours as dicts. Filter by tag or promotion status.
+
+**`s.memory_tour_get(tour_id)`** — Retrieve a single tour by ID. Records usage automatically.
+
+**`s.memory_tour_promote(tour_id)`** — Mark a tour as promoted (durable memory).
+
+**`s.memory_tour_remove(tour_id)`** — Delete a tour.
+
+**`s.memory_tour_scaffold_prompt(plan)`** — Generate a structured prompt for LLM-authored tour creation.
+
+**`s.memory_tour_create_from_dict(data)`** — Create a tour from raw JSON (e.g. LLM-authored output).
+
+**Memory tour workflow example:**
+
+```bash
+python -c "
+from hypergraph_code_explorer.api import HypergraphSession
+import json
+s = HypergraphSession.load('<source-root>/.hce_cache')
+
+# Create a memory tour from a query
+plan = s.query('how does authentication work', depth=2)
+tour = s.memory_tour_create(plan, name='Auth Flow', tags=['auth'])
+print(json.dumps(tour, indent=2))
+
+# Later: list and recall tours
+tours = s.memory_tour_list(tag='auth')
+print(json.dumps(tours, indent=2))
+
+# Promote useful tours to durable memory
+s.memory_tour_promote(tour['id'])
+"
+```
+
 ## Workflow
 
 ### Step 1: Find the source root

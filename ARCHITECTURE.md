@@ -119,15 +119,44 @@ Generated automatically after indexing. Contains modules (all source files with 
 
 ### Visualization Pipeline
 
-The `skill/` directory bundles an agent skill that automates visualization. The pipeline works in three stages:
+Visualization is unified with memory tours — there is one tour format, and the `hce visualize` CLI produces both an interactive D3 HTML and a markdown report from it.
 
-**`skill/scripts/extract_graph.py`** — Reads `.hce_cache/` and produces `graph.json` with language-tagged nodes. Output format: `{nodes: [{id, label, group, degree, importance, language}], edges: [{source, target, type, file}]}`. The `language` field is derived from the source file extension.
+**`visualization.py`** — The core module. Takes a `HypergraphBuilder` and a list of `MemoryTour` objects, extracts a focused subgraph (1-hop neighborhood of all tour seed nodes), converts tours to the viz template format (auto-assigned colors, symbol highlighting), and injects everything into the D3 template. Also generates a markdown report with tour index tables, step listings, and tag/type breakdowns.
 
-**`skill/scripts/generate_viz.py`** — Takes `graph.json` + `tours.json`, minifies the data (short keys for compact HTML), and injects it into the bundled D3.js template. Produces a self-contained HTML file with no external dependencies.
+Key functions:
+- `select_tours(store, tags, tour_ids)` — filter tours by tag or ID
+- `extract_tour_subgraph(builder, tours)` — 1-hop neighborhood extraction with importance scoring and seed-node boosting
+- `memory_tours_to_viz(tours, graph_node_ids)` — converts `MemoryTour` objects to the viz format with auto-assigned colors from a 12-color palette
+- `generate_html(builder, tours, output_path)` — subgraph extraction + tour conversion + template injection → self-contained HTML
+- `generate_report(tours, output_path)` — markdown report in the style of `docs/SAMPLE_TOUR_REPORT.md`
+- `generate_visualization(builder, tours, output_base)` — writes both `.html` and `.md`
 
-**`skill/assets/viz_template.html`** — The D3.js visualization template (~580 lines). Includes force-directed layout, importance-based node sizing, dual color modes (by module / by language using GitHub's palette), guided tours with click-to-spotlight, symbol search with suggestion chips, a "Suggest Tours" button (client-side cluster analysis), and a "Copy Prompt for Claude" button that generates a pre-loaded prompt for requesting AI-authored tours.
+**`skill/assets/viz_template.html`** — The D3.js rendering template (~580 lines). Includes force-directed layout, importance-based node sizing, dual color modes (by module / by language using GitHub's palette), guided tours with click-to-spotlight, symbol search with suggestion chips, a "Suggest Tours" button (client-side cluster analysis), and a "Copy Prompt for Claude" button. The template uses placeholder markers (`{{TITLE}}`, `// {{DATA_INJECTION}}`, `// {{TOURS_INJECTION}}`, `// {{CONFIG_INJECTION}}`) that `visualization.py` replaces at generation time.
 
-The agent writes `tours.json` with guided tours, group colors, and a colorblind-safe palette. The template uses placeholder markers (`{{TITLE}}`, `// {{DATA_INJECTION}}`, `// {{TOURS_INJECTION}}`, `// {{CONFIG_INJECTION}}`) that `generate_viz.py` replaces at generation time.
+**Superseded scripts** (kept for backward compatibility):
+- `skill/scripts/extract_graph.py` + `skill/scripts/generate_viz.py` — the old two-step pipeline that required a separate `tours.json`
+- `docs/generate_bug_viz.py` — the one-off bug viz script that proved the unified approach
+
+### Memory Tours
+
+Memory tours are a separate persistence layer for agent-facing architectural notes. Unlike visualization tours (which are authored for the D3 HTML and filter to structural edge types only), memory tours access the **full graph** — all edge types including IMPORTS and SIGNATURE — and carry provenance and reuse metadata.
+
+**Storage**: `.hce_cache/memory_tours.json` — a JSON sidecar next to `builder.pkl`. Never stored inside the graph pickle so graph serialization stays stable.
+
+**Data model** (`memory_tours.py`):
+- `MemoryTour` — id, name, summary, keywords, steps, tags, provenance (created_from_query, created_at), promotion flag, usage tracking (use_count, last_used_at)
+- `MemoryTourStep` — node (graph node ID), text (narrative), optional file path and edge_type
+- `MemoryTourStore` — file-backed CRUD store with filtering by tag and promotion status
+
+**Lifecycle**: Tours are created ephemeral by default, then optionally promoted to persistent memory. The promotion flag lets agents distinguish "working notes" from "durable architectural knowledge."
+
+**Scaffolding**: Two functions derive tours from retrieval results without LLM calls:
+- `scaffold_from_plan(plan)` — extracts symbols, files, and relationships from a `RetrievalPlan` into ordered tour steps
+- `scaffold_prompt(plan)` — produces a structured prompt payload for LLM-authored tour creation, including the expected JSON schema and existing tour context
+
+**Session API** (`api.py`): `HypergraphSession` exposes `memory_tour_create`, `memory_tour_list`, `memory_tour_get`, `memory_tour_promote`, `memory_tour_remove`, `memory_tour_scaffold_prompt`, `memory_tour_create_from_dict`, and `visualize` for programmatic tour ingestion and visualization.
+
+**Visualization**: Memory tours are the single canonical format for both agent memory and human-readable visualization. `visualization.py` converts tours to the D3 viz format automatically (color assignment, symbol highlighting, subgraph extraction). See the Visualization Pipeline section above.
 
 ### File-Hash Caching
 
@@ -145,6 +174,8 @@ Manifest: `{file_path: (sha256, [edge_ids])}`. On re-index: skip unchanged, re-e
 | `hce init --tool all` | Generate tool instruction files |
 | `hce embed` | Compute embeddings for Tier 4 |
 | `hce stats` | Graph statistics |
+| `hce tour list\|show\|create\|promote\|remove\|scaffold` | Memory tours — persistent agent-facing architectural notes |
+| `hce visualize [--tags t] [--tours id] [-o base]` | Generate D3 HTML + markdown report from memory tours |
 | `hce server` | Start MCP server |
 
 All commands support `--json` for structured output.
@@ -187,12 +218,14 @@ retrieval/dispatch.py    ← lookup, traverse, textsearch
 retrieval/semantic.py    ← builder, embeddings (optional), plan
 codemap.py               ← builder
 init.py                  ← no deps
+memory_tours.py          ← retrieval/plan (via scaffold), json, pathlib
+visualization.py         ← builder, memory_tours, viz_template.html
 pipeline.py              ← all above
-api.py                   ← builder, retrieval
+api.py                   ← builder, retrieval, memory_tours, visualization
 mcp_server.py            ← api, mcp
 cli.py                   ← all above
-skill/scripts/extract_graph.py    ← reads .hce_cache/ JSON directly
-skill/scripts/generate_viz.py     ← reads graph.json, tours.json, viz_template.html
+skill/scripts/extract_graph.py    ← reads .hce_cache/ JSON directly (superseded)
+skill/scripts/generate_viz.py     ← reads graph.json, tours.json (superseded)
 ```
 
 ## Dependencies

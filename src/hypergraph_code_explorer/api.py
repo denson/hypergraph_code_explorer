@@ -4,6 +4,9 @@ API Layer
 HypergraphSession — serializable API layer between pipeline and MCP server.
 Exposes the new v3 retrieval interface (lookup, search, query, overview)
 alongside legacy methods for backward compatibility.
+
+Memory tour operations are delegated to MemoryTourStore, loaded lazily from
+the same cache directory that holds builder.pkl.
 """
 
 from __future__ import annotations
@@ -12,22 +15,39 @@ import json
 from pathlib import Path
 
 from .graph.builder import HypergraphBuilder
+from .memory_tours import (
+    MemoryTour,
+    MemoryTourStore,
+    scaffold_from_plan,
+    scaffold_prompt,
+)
 from .retrieval.plan import RetrievalPlan, format_text, format_json
 
 
 class HypergraphSession:
     """Wraps a HypergraphBuilder for use by the MCP server and API consumers."""
 
-    def __init__(self, builder: HypergraphBuilder | None = None):
+    def __init__(
+        self,
+        builder: HypergraphBuilder | None = None,
+        cache_dir: str | Path | None = None,
+    ):
         self._builder = builder or HypergraphBuilder()
+        self._cache_dir: Path | None = Path(cache_dir) if cache_dir else None
+        self._tour_store: MemoryTourStore | None = None
 
     @classmethod
     def load(cls, path: str | Path) -> HypergraphSession:
         """Load a session from a saved builder state."""
         path = Path(path)
-        builder_path = path / "builder.pkl" if path.is_dir() else path
+        if path.is_dir():
+            cache_dir = path
+            builder_path = path / "builder.pkl"
+        else:
+            cache_dir = path.parent
+            builder_path = path
         builder = HypergraphBuilder.load(builder_path)
-        return cls(builder)
+        return cls(builder, cache_dir=cache_dir)
 
     @property
     def builder(self) -> HypergraphBuilder:
@@ -122,6 +142,109 @@ class HypergraphSession:
         stats = self._builder.stats()
         stats["hub_nodes"] = len(self._builder.get_hub_nodes())
         return stats
+
+    # ---- Memory tour operations -------------------------------------------
+
+    def _get_tour_store(self) -> MemoryTourStore:
+        """Lazily initialise and return the MemoryTourStore."""
+        if self._tour_store is None:
+            if self._cache_dir is None:
+                raise RuntimeError(
+                    "No cache directory available for memory tours. "
+                    "Load the session from a cache directory or set cache_dir."
+                )
+            self._tour_store = MemoryTourStore(self._cache_dir)
+        return self._tour_store
+
+    def memory_tour_create(
+        self,
+        plan: RetrievalPlan,
+        *,
+        name: str = "",
+        tags: list[str] | None = None,
+    ) -> MemoryTour:
+        """Scaffold a memory tour from a RetrievalPlan and persist it."""
+        tour = scaffold_from_plan(plan, name=name, tags=tags)
+        return self._get_tour_store().add(tour)
+
+    def memory_tour_create_from_dict(self, data: dict) -> MemoryTour:
+        """Create a memory tour from raw dict data (e.g. LLM-authored JSON)."""
+        tour = MemoryTour.from_dict(data)
+        return self._get_tour_store().add(tour)
+
+    def memory_tour_list(
+        self,
+        *,
+        tag: str | None = None,
+        promoted_only: bool = False,
+    ) -> list[dict]:
+        """List all memory tours as dicts."""
+        tours = self._get_tour_store().list_tours(
+            tag=tag, promoted_only=promoted_only,
+        )
+        return [t.to_dict() for t in tours]
+
+    def memory_tour_get(self, tour_id: str) -> dict | None:
+        """Get a single memory tour by ID."""
+        tour = self._get_tour_store().get(tour_id)
+        if tour:
+            self._get_tour_store().touch(tour_id)
+            return tour.to_dict()
+        return None
+
+    def memory_tour_promote(self, tour_id: str) -> dict | None:
+        """Mark a memory tour as promoted (persistent)."""
+        tour = self._get_tour_store().promote(tour_id)
+        return tour.to_dict() if tour else None
+
+    def memory_tour_remove(self, tour_id: str) -> bool:
+        """Remove a memory tour."""
+        return self._get_tour_store().remove(tour_id)
+
+    def memory_tour_scaffold_prompt(
+        self,
+        plan: RetrievalPlan,
+    ) -> str:
+        """Generate a structured prompt for LLM-authored memory tour creation."""
+        existing = [
+            t.name for t in self._get_tour_store().list_tours()
+        ]
+        return scaffold_prompt(plan, existing_tour_names=existing)
+
+    # ---- Visualization ---------------------------------------------------
+
+    def visualize(
+        self,
+        *,
+        tags: list[str] | None = None,
+        tour_ids: list[str] | None = None,
+        output: str = "visualization",
+        title: str = "",
+    ) -> dict:
+        """Generate tour-focused D3 HTML + markdown report.
+
+        Selects tours by tag or ID, extracts a focused subgraph, and writes
+        both an interactive HTML visualization and a markdown report.
+
+        Returns dict with keys: html, md, tours, nodes, edges.
+        """
+        from .visualization import select_tours, generate_visualization
+
+        store = self._get_tour_store()
+        tours = select_tours(store, tags=tags, tour_ids=tour_ids)
+        if not tours:
+            return {"error": "No memory tours found matching the criteria."}
+
+        viz_title = title or "Codebase Architecture"
+        target_codebase = str(self._cache_dir) if self._cache_dir else ""
+
+        return generate_visualization(
+            self._builder, tours, output,
+            title=viz_title,
+            target_codebase=target_codebase,
+        )
+
+    # ---- Persistence ---------------------------------------------------
 
     def save(self, path: str | Path) -> None:
         path = Path(path)
