@@ -184,6 +184,8 @@ def main():
     blast_p.add_argument("--hops", type=int, default=0,
         help="Maximum hops from tour nodes to include (default: 0 = unlimited). "
              "The D3 template uses hop_distance + zoom for fog-of-war visibility.")
+    blast_p.add_argument("--max-svg", type=int, default=500,
+        help="Max SVG nodes in browser focus window (default: 500)")
     blast_p.add_argument("--output", "-o", type=str, default="blast_analysis",
         help="Output basename (default: blast_analysis)")
     blast_p.add_argument("--cache-dir", type=str, default=None)
@@ -202,6 +204,8 @@ def main():
     viz_p.add_argument("--output", "-o", type=str, default="visualization",
         help="Output basename without extension (default: visualization). "
              "Writes <basename>.html and optionally <basename>.md")
+    viz_p.add_argument("--max-svg", type=int, default=500,
+        help="Max SVG nodes in browser focus window (default: 500)")
     viz_p.add_argument("--title", type=str, default=None,
         help="Title for both outputs (default: derived from cache dir)")
     viz_p.add_argument("--cache-dir", type=str, default=None)
@@ -679,6 +683,7 @@ def _run_blast_radius(args):
     result = session.visualize(
         tour_ids=[tour.id], output=args.output,
         max_neighborhood_hops=args.hops,
+        max_svg=args.max_svg,
     )
     node_msg = f"{result['nodes']} nodes, {result['edges']} edges"
     if result.get("fog_tour_nodes"):
@@ -721,6 +726,7 @@ def _run_visualize(args):
     result = generate_visualization(
         builder, args.output,
         tours=tours,
+        max_svg=args.max_svg,
         title=title,
         target_codebase=target_codebase,
     )

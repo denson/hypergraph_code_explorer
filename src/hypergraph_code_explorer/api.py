@@ -286,7 +286,8 @@ class HypergraphSession:
         tags: list[str] | None = None,
         tour_ids: list[str] | None = None,
         full_graph: bool = False,
-        max_neighborhood_hops: int = 2,
+        max_neighborhood_hops: int = 0,
+        max_svg: int = 500,
         output: str = "visualization",
         title: str = "",
     ) -> dict:
@@ -320,6 +321,7 @@ class HypergraphSession:
             self._builder, output,
             tours=tours,
             max_neighborhood_hops=max_neighborhood_hops,
+            max_svg=max_svg,
             title=viz_title,
             target_codebase=target_codebase,
         )

@@ -205,28 +205,151 @@ def _get_hub_nodes(builder: HypergraphBuilder, top: int = 20) -> list[str]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# Pre-computed layout
+# ---------------------------------------------------------------------------
+
+import math
+import random as _random
+
+_LAYOUT_RNG = _random.Random(42)
+
+
+def _precompute_layout(
+    nodes: list[dict],
+    edges: list[dict],
+) -> None:
+    """Assign x,y positions to nodes in-place.
+
+    For small graphs (<=2000 nodes): use NetworkX spring_layout.
+    For large graphs: module-based circle arrangement + spring refinement.
+    Positions are deterministic (seeded RNG).
+    """
+    if not nodes:
+        return
+
+    if len(nodes) <= 2000:
+        _layout_spring(nodes, edges)
+    else:
+        _layout_modular(nodes, edges)
+
+
+def _layout_spring(nodes: list[dict], edges: list[dict]) -> None:
+    """Use NetworkX spring_layout for small graphs."""
+    import networkx as nx
+
+    G = nx.Graph()
+    for n in nodes:
+        G.add_node(n["id"])
+    for e in edges:
+        G.add_edge(e["source"], e["target"])
+
+    pos = nx.spring_layout(G, k=1.5, iterations=100, seed=42, scale=500)
+    for n in nodes:
+        x, y = pos.get(n["id"], (0, 0))
+        n["x"] = round(float(x), 1)
+        n["y"] = round(float(y), 1)
+
+
+def _layout_modular(nodes: list[dict], edges: list[dict]) -> None:
+    """Module-based circle layout for large graphs.
+
+    1. Arrange module centroids in a circle.
+    2. Scatter nodes within each module's region.
+    3. Apply spring iterations to pull connected nodes closer.
+    """
+    rng = _LAYOUT_RNG
+    rng.seed(42)
+
+    # Group nodes by module
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for n in nodes:
+        groups[n["group"]].append(n)
+
+    # Arrange modules in a circle, larger modules get more space
+    module_list = sorted(groups.keys())
+    n_modules = max(len(module_list), 1)
+    base_radius = 400 + n_modules * 25
+
+    module_pos: dict[str, tuple[float, float]] = {}
+    for i, mod in enumerate(module_list):
+        angle = 2 * math.pi * i / n_modules
+        module_pos[mod] = (
+            base_radius * math.cos(angle),
+            base_radius * math.sin(angle),
+        )
+
+    # Scatter nodes within module region
+    for mod, mod_nodes in groups.items():
+        mx, my = module_pos.get(mod, (0.0, 0.0))
+        spread = max(40, min(120, len(mod_nodes) * 0.5))
+        for n in mod_nodes:
+            n["x"] = round(mx + rng.gauss(0, spread), 1)
+            n["y"] = round(my + rng.gauss(0, spread), 1)
+
+    # Spring iterations to pull connected nodes together
+    _spring_iterations(nodes, edges, iterations=50)
+
+
+def _spring_iterations(
+    nodes: list[dict],
+    edges: list[dict],
+    iterations: int = 50,
+    k: float = 0.008,
+) -> None:
+    """Apply spring forces between connected nodes to refine layout."""
+    node_idx = {n["id"]: n for n in nodes}
+
+    for _ in range(iterations):
+        for e in edges:
+            src = node_idx.get(e["source"])
+            tgt = node_idx.get(e["target"])
+            if not src or not tgt:
+                continue
+            dx = tgt["x"] - src["x"]
+            dy = tgt["y"] - src["y"]
+            dist = math.sqrt(dx * dx + dy * dy) + 0.01
+            # Attractive force
+            fx = k * dx
+            fy = k * dy
+            src["x"] = round(src["x"] + fx, 1)
+            src["y"] = round(src["y"] + fy, 1)
+            tgt["x"] = round(tgt["x"] - fx, 1)
+            tgt["y"] = round(tgt["y"] - fy, 1)
+
+
+# Edge type enum for compact edge encoding
+EDGE_TYPE_ENUM = {
+    "CALLS": 0, "IMPORTS": 1, "DEFINES": 2, "INHERITS": 3,
+    "RAISES": 4, "DECORATES": 5, "SIGNATURE": 6,
+}
+EDGE_TYPE_NAMES = list(EDGE_TYPE_ENUM.keys())
+
+
 def extract_tour_subgraph(
     builder: HypergraphBuilder,
     tours: list[MemoryTour],
     *,
     edge_types: set[str] | None = None,
     max_neighborhood_hops: int = 0,
+    max_svg: int = 500,
 ) -> dict:
     """Extract graph data with hop-distance metadata for fog-of-war viz.
 
-    ALL nodes reachable from tour seeds (within ``max_neighborhood_hops``,
-    or unlimited if 0) are included. Each node carries a ``hop_distance``
-    field that the D3 template uses with the current zoom level to control
-    visibility (fog-of-war effect).
+    ALL nodes reachable from tour seeds are included. Each node carries
+    ``hop_distance`` and pre-computed ``x``/``y`` layout positions. The
+    browser renders only a focus window of nodes as SVG; the rest appear
+    as a canvas heatmap (fog).
 
     Args:
         edge_types: If provided, only include these edge types (overrides
             the default ``STRUCTURAL_TYPES`` filter).
         max_neighborhood_hops: Maximum hops to emit (0 = unlimited).
             Nodes beyond this are hard-pruned from the data.
+        max_svg: Maximum SVG nodes in the initial focus window.
 
     Returns ``{"nodes": [...], "edges": [...], "group_colors": {...},
-    "hub_nodes": [...]}`` in the format expected by the viz template.
+    "hub_nodes": [...], "focus_window": [...]}``
     """
     allowed_types = edge_types if edge_types is not None else STRUCTURAL_TYPES
     seed_nodes = collect_seed_nodes(tours)
@@ -234,11 +357,19 @@ def extract_tour_subgraph(
     # Expand seeds via fuzzy matching
     expanded_seeds = _expand_seeds(builder, seed_nodes)
 
-    # Compute hop distances via BFS (unlimited or capped)
+    # Compute hop distances via BFS (always unlimited for full graph data)
     distances = _compute_hop_distances(
-        builder, expanded_seeds, allowed_types, max_neighborhood_hops,
+        builder, expanded_seeds, allowed_types, 0,
     )
-    reachable_nodes = set(distances.keys())
+
+    # If max_neighborhood_hops > 0, also compute with cap for pruning
+    if max_neighborhood_hops > 0:
+        capped = _compute_hop_distances(
+            builder, expanded_seeds, allowed_types, max_neighborhood_hops,
+        )
+        reachable_nodes = set(capped.keys())
+    else:
+        reachable_nodes = set(distances.keys())
 
     degree: dict[str, int] = defaultdict(int)
     calls_degree: dict[str, int] = defaultdict(int)
@@ -295,15 +426,44 @@ def extract_tour_subgraph(
             "hop_distance": distances.get(nid, -1),
         })
 
+    # Pre-compute layout positions
+    _precompute_layout(nodes, edges)
+
     group_colors = {g: _group_color_from_name(g) for g in sorted(groups_seen)}
     hub_nodes = _get_hub_nodes(builder, top=20)
+
+    # Compute initial focus window: tour seeds + their 2-hop neighborhood
+    focus_window = _compute_focus_window(
+        nodes, expanded_seeds, max_svg,
+    )
 
     return {
         "nodes": nodes,
         "edges": edges,
         "group_colors": group_colors,
         "hub_nodes": hub_nodes,
+        "focus_window": focus_window,
     }
+
+
+def _compute_focus_window(
+    nodes: list[dict],
+    seed_ids: set[str],
+    max_svg: int = 500,
+) -> list[str]:
+    """Compute the initial focus window: seed nodes + nearest neighbors by hop distance."""
+    # Always include seed nodes
+    seeds_in_graph = [n for n in nodes if n["id"] in seed_ids]
+    others = [n for n in nodes if n["id"] not in seed_ids]
+
+    # Sort non-seeds by hop distance (closest first), then by importance
+    others.sort(key=lambda n: (n.get("hop_distance", 999) if n.get("hop_distance", -1) >= 0 else 999, -n["importance"]))
+
+    budget = max_svg - len(seeds_in_graph)
+    selected = [n["id"] for n in seeds_in_graph]
+    if budget > 0:
+        selected.extend(n["id"] for n in others[:budget])
+    return selected
 
 
 def extract_full_graph(builder: HypergraphBuilder) -> dict:
@@ -379,13 +539,20 @@ def extract_full_graph(builder: HypergraphBuilder) -> dict:
             "hop_distance": distances.get(nid, -1),
         })
 
+    # Pre-compute layout positions
+    _precompute_layout(nodes, edges)
+
     group_colors = {g: _group_color_from_name(g) for g in sorted(groups_seen)}
+
+    # Focus window: hub nodes + nearest neighbors
+    focus_window = _compute_focus_window(nodes, hub_set, max_svg=500)
 
     return {
         "nodes": nodes,
         "edges": edges,
         "group_colors": group_colors,
         "hub_nodes": hub_nodes,
+        "focus_window": focus_window,
     }
 
 
@@ -474,32 +641,77 @@ def memory_tours_to_viz(
 # ---------------------------------------------------------------------------
 
 def _minify_data(graph_data: dict) -> dict:
-    nodes = []
-    for n in graph_data["nodes"]:
+    """Minify graph data for compact JSON embedding.
+
+    - Nodes in the focus window get full fields; fog nodes get compact fields.
+    - Edges are encoded as ``[srcIdx, tgtIdx, typeEnum, fileIdx]`` arrays.
+    - File paths are deduplicated into a separate array.
+    - All nodes include pre-computed x,y positions.
+    """
+    focus_set = set(graph_data.get("focus_window", []))
+    raw_nodes = graph_data["nodes"]
+
+    # Build node index for edge encoding
+    node_id_to_idx: dict[str, int] = {}
+    nodes: list[dict] = []
+    for i, n in enumerate(raw_nodes):
+        node_id_to_idx[n["id"]] = i
+        in_focus = n["id"] in focus_set
         nd: dict = {
             "i": n["id"],
-            "l": n["label"],
             "g": n["group"],
-            "d": n["degree"],
             "p": n["importance"],
-            "ln": n.get("language", "other"),
         }
         if "hop_distance" in n:
             nd["h"] = n["hop_distance"]
+        if "x" in n:
+            nd["x"] = n["x"]
+        if "y" in n:
+            nd["y"] = n["y"]
+        # Full fields only for focus-window nodes
+        if in_focus:
+            nd["l"] = n["label"]
+            nd["d"] = n["degree"]
+            nd["ln"] = n.get("language", "other")
         nodes.append(nd)
-    edges = [{
-        "s": e["source"],
-        "t": e["target"],
-        "y": e["type"],
-        "f": e.get("file", ""),
-    } for e in graph_data["edges"]]
 
-    result: dict = {"n": nodes, "e": edges}
+    # Deduplicate file paths
+    file_to_idx: dict[str, int] = {}
+    file_list: list[str] = []
+    for e in graph_data["edges"]:
+        f = e.get("file", "")
+        if f and f not in file_to_idx:
+            file_to_idx[f] = len(file_list)
+            file_list.append(f)
 
-    # Pass through hub nodes for default fog seeds
+    # Compact edge encoding: [srcIdx, tgtIdx, typeEnum, fileIdx]
+    edges: list[list[int]] = []
+    for e in graph_data["edges"]:
+        si = node_id_to_idx.get(e["source"])
+        ti = node_id_to_idx.get(e["target"])
+        if si is None or ti is None:
+            continue
+        te = EDGE_TYPE_ENUM.get(e["type"], 0)
+        fi = file_to_idx.get(e.get("file", ""), -1)
+        edge = [si, ti, te]
+        if fi >= 0:
+            edge.append(fi)
+        edges.append(edge)
+
+    result: dict = {
+        "n": nodes,
+        "e": edges,
+        "f": file_list,
+        "t": EDGE_TYPE_NAMES,
+    }
+
     hub = graph_data.get("hub_nodes", [])
     if hub:
         result["hubs"] = hub
+
+    fw = graph_data.get("focus_window", [])
+    if fw:
+        result["fw"] = fw
 
     return result
 
@@ -577,7 +789,8 @@ def generate_html(
     *,
     tours: list[MemoryTour] | None = None,
     edge_types: set[str] | None = None,
-    max_neighborhood_hops: int = 2,
+    max_neighborhood_hops: int = 0,
+    max_svg: int = 500,
     title: str = "Codebase Architecture",
     template_path: str | Path | None = None,
 ) -> Path:
@@ -595,6 +808,7 @@ def generate_html(
             builder, tours,
             edge_types=edge_types,
             max_neighborhood_hops=max_neighborhood_hops,
+            max_svg=max_svg,
         )
         graph_node_ids = {n["id"] for n in graph_data["nodes"]}
         viz_tours = memory_tours_to_viz(tours, graph_node_ids)
@@ -843,6 +1057,7 @@ def generate_visualization(
     tours: list[MemoryTour] | None = None,
     edge_types: set[str] | None = None,
     max_neighborhood_hops: int = 0,
+    max_svg: int = 500,
     title: str = "Codebase Architecture",
     template_path: str | Path | None = None,
     target_codebase: str = "",
@@ -853,18 +1068,18 @@ def generate_visualization(
     both HTML and a markdown report. If ``tours`` is None or empty,
     visualizes the full graph (HTML only, no markdown report).
 
-    All nodes carry ``hop_distance`` metadata. The D3 template uses this
-    with the current zoom level to control visibility (fog-of-war effect).
+    Nodes have pre-computed x/y positions and hop_distance metadata.
+    The browser renders only a focus window (~max_svg nodes) as SVG;
+    the rest appear as a canvas heatmap (fog).
 
     Args:
         builder: The loaded HypergraphBuilder.
         output_base: Base path without extension. Writes ``<base>.html``
             and optionally ``<base>.md``.
         tours: Optional memory tours to overlay as guided walks.
-        edge_types: If provided, only include these edge types in the
-            subgraph (overrides the default structural types filter).
+        edge_types: If provided, only include these edge types.
         max_neighborhood_hops: Maximum hops to emit (0 = unlimited).
-            Nodes beyond are hard-pruned from the data.
+        max_svg: Maximum SVG nodes in browser focus window (default: 500).
         title: Title for both outputs.
         template_path: Override path to ``viz_template.html``.
         target_codebase: Codebase name for the markdown report header.
@@ -881,6 +1096,7 @@ def generate_visualization(
             builder, tours,
             edge_types=edge_types,
             max_neighborhood_hops=max_neighborhood_hops,
+            max_svg=max_svg,
         )
         graph_node_ids = {n["id"] for n in graph_data["nodes"]}
         viz_tours = memory_tours_to_viz(tours, graph_node_ids)

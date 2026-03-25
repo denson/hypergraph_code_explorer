@@ -69,7 +69,11 @@ body { background:#0a0a1a; color:#e0e0e8; font-family:'Segoe UI',system-ui,-appl
 #lang-legend .lang-swatch { width:10px; height:10px; border-radius:50%; margin-right:4px; display:inline-block; }
 #graph-container { position:fixed; left:320px; top:0; right:0; bottom:0; transition: right 0.3s ease; }
 body.drawer-open #graph-container { right:400px; }
-svg { width:100%; height:100%; }
+#heatmap-canvas {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  filter:blur(4px); pointer-events:none; z-index:0;
+}
+svg { width:100%; height:100%; position:relative; z-index:1; }
 #tooltip {
   position:fixed; display:none; padding:8px 12px; border-radius:6px;
   background:rgba(10,10,26,0.95); border:1px solid #3a3a5a;
@@ -189,7 +193,7 @@ svg { width:100%; height:100%; }
     <button class="ctrl-btn" id="btn-reset">Reset View</button>
   </div>
 </div>
-<div id="graph-container"><svg id="graph-svg"></svg></div>
+<div id="graph-container"><canvas id="heatmap-canvas"></canvas><svg id="graph-svg"></svg></div>
 <div id="tooltip"></div>
 <div id="detail-drawer">
   <div id="detail-drawer-header">
@@ -209,15 +213,61 @@ svg { width:100%; height:100%; }
 // {{CONFIG_INJECTION}} — replaced by generate_viz.py
 
 // ── EXPAND RAW DATA ─────────────────────────────────────────────────
-const nodes = _raw.n.map(n => ({id:n.i, label:n.l, group:n.g, degree:n.d, importance:n.p, language:n.ln||'other', hop_distance:n.h!=null?n.h:-1}));
-const edges = _raw.e.map(e => ({source:e.s, target:e.t, type:e.y, file:e.f}));
+const TYPE_NAMES = _raw.t || ['CALLS','IMPORTS','DEFINES','INHERITS','RAISES','DECORATES','SIGNATURE'];
+const FILE_PATHS = _raw.f || [];
+const nodes = _raw.n.map(n => ({
+  id:n.i,
+  label:n.l||(n.i.includes('.')?n.i.split('.').pop():n.i),
+  group:n.g, degree:n.d||0, importance:n.p||0,
+  language:n.ln||'other',
+  hop_distance:n.h!=null?n.h:-1,
+  x:n.x!=null?n.x:0, y:n.y!=null?n.y:0
+}));
+// Compact edge expansion: [srcIdx, tgtIdx, typeEnum, fileIdx?]
+const edges = _raw.e.map(e => {
+  const arr = Array.isArray(e) ? e : null;
+  if (arr) return {source:nodes[arr[0]].id, target:nodes[arr[1]].id, type:TYPE_NAMES[arr[2]]||'CALLS', file:arr[3]!=null?FILE_PATHS[arr[3]]||'':''};
+  return {source:e.s, target:e.t, type:e.y||'CALLS', file:e.f||''};
+});
 const hubNodes = new Set(_raw.hubs || []);
+const initialFocusIds = new Set(_raw.fw || nodes.map(n=>n.id));
 const isMultiLang = new Set(nodes.map(n=>n.language)).size > 1;
+const smallGraph = nodes.length <= 500;
 
-// ── HOP DISTANCE LOOKUP ───────────────────────────────────────────
+// ── HOP DISTANCE + NODE LOOKUP ─────────────────────────────────────
 const nodeHopMap = {};
-nodes.forEach(d => { nodeHopMap[d.id] = d.hop_distance; });
-const maxHopInData = Math.max(1, d3.max(nodes, d => d.hop_distance > 0 ? d.hop_distance : 0) || 5);
+const nodeById = new Map();
+nodes.forEach(d => { nodeHopMap[d.id] = d.hop_distance; nodeById.set(d.id, d); });
+
+// ── ADJACENCY INDEX (for client-side BFS) ──────────────────────────
+const adjIndex = new Map();
+edges.forEach(e => {
+  if (!adjIndex.has(e.source)) adjIndex.set(e.source, []);
+  if (!adjIndex.has(e.target)) adjIndex.set(e.target, []);
+  adjIndex.get(e.source).push(e.target);
+  adjIndex.get(e.target).push(e.source);
+});
+function bfs(startId, maxHops) {
+  const visited = new Map();
+  visited.set(startId, 0);
+  let frontier = [startId];
+  for (let hop = 1; hop <= maxHops; hop++) {
+    const next = [];
+    for (const nid of frontier) {
+      for (const neighbor of (adjIndex.get(nid) || [])) {
+        if (!visited.has(neighbor)) { visited.set(neighbor, hop); next.push(neighbor); }
+      }
+    }
+    frontier = next;
+  }
+  return visited;
+}
+
+// ── FOCUS WINDOW STATE ─────────────────────────────────────────────
+let focusNodeId = null;
+const focusWindow = new Set(smallGraph ? nodes.map(n=>n.id) : initialFocusIds);
+const FOCUS_HOPS = 2;
+const MAX_SVG_NODES = smallGraph ? nodes.length : Math.max(initialFocusIds.size, 500);
 
 // ── LANGUAGE COLORS ─────────────────────────────────────────────────
 const LANG_COLORS = {
@@ -238,13 +288,11 @@ const PALETTE_CB = {
 
 let palette = PALETTE_DEFAULT;
 let colorByLang = false;
-let frozen = false;
-let breathPhase = 0;
-let breathInterval;
 let activeTourIdx = -1;
 let activeStepIdx = -1;
-let simulation, svgEl, g, gLinks, gNodes, gLabels, zoomBehavior;
+let svgEl, g, gLinks, gNodes, gLabels, zoomBehavior;
 let linkSel, nodeSel, labelSel;
+let currentTransform = d3.zoomIdentity;
 
 // ── NODE HELPERS ────────────────────────────────────────────────────
 function nodeColor(d) {
@@ -278,96 +326,215 @@ pulseFilter.append('feGaussianBlur').attr('in','SourceGraphic').attr('stdDeviati
 const pulseMerge = pulseFilter.append('feMerge');
 pulseMerge.append('feMergeNode').attr('in','blur');
 pulseMerge.append('feMergeNode').attr('in','SourceGraphic');
-const heavyFog = defs.append('filter').attr('id','heavy-fog').attr('x','-100%').attr('y','-100%').attr('width','300%').attr('height','300%');
-heavyFog.append('feGaussianBlur').attr('in','SourceGraphic').attr('stdDeviation','8');
 
-// Single <g> container — critical for zoom performance
+// Single <g> container for SVG layer
 g = svgEl.append('g').attr('id','graph-g');
 zoomBehavior = d3.zoom().scaleExtent([0.05, 10])
   .on('zoom', e => {
     g.attr('transform', e.transform);
-    if (activeTourIdx < 0) updateFogOfWar(e.transform);
+    currentTransform = e.transform;
+    drawHeatmap(e.transform);
   });
 svgEl.call(zoomBehavior);
 gLinks    = g.append('g').attr('class','links');
 gNodes    = g.append('g').attr('class','nodes');
 gLabels   = g.append('g').attr('class','labels');
 
-// ── FORCE SIMULATION ────────────────────────────────────────────────
-// For large graphs (13K+ nodes), use faster convergence
-const largeGraph = nodes.length > 2000;
-simulation = d3.forceSimulation(nodes)
-  .force('link', d3.forceLink(edges).id(d=>d.id)
-    .distance(d => d.type==='DEFINES'?35 : d.type==='INHERITS'?55 : 70)
-    .strength(d => d.type==='DEFINES'?0.7 : d.type==='INHERITS'?0.45 : 0.25))
-  .force('charge', d3.forceManyBody().strength(largeGraph ? -15 : -30).distanceMax(largeGraph ? 150 : 250))
-  .force('center', d3.forceCenter(W/2+80, H/2))
-  .force('x', d3.forceX(W/2+80).strength(0.015))
-  .force('y', d3.forceY(H/2).strength(0.015))
-  .force('collision', d3.forceCollide().radius(d=>nodeRadius(d)+1));
-if (largeGraph) simulation.alphaDecay(0.05);
-// Pre-settle for large graphs so the user sees a stable layout
-if (largeGraph) { simulation.stop(); simulation.tick(150); }
-simulation.on('tick', ticked);
+// ── CANVAS HEATMAP (fog layer — all nodes, no DOM) ─────────────────
+const canvas = document.getElementById('heatmap-canvas');
+const ctx = canvas.getContext('2d');
+function resizeCanvas() {
+  canvas.width = container.clientWidth;
+  canvas.height = container.clientHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', () => { resizeCanvas(); drawHeatmap(currentTransform); });
 
-// ── FOG-OF-WAR HELPERS ──────────────────────────────────────────────
-function fogNodeFilter(d) {
-  if (d.hop_distance === 0) return 'url(#glow)';
-  if (d.hop_distance <= 1) return null;
-  if (d.hop_distance <= 2) return 'url(#blur-cloud)';
-  return 'url(#heavy-fog)';
+function drawHeatmap(transform) {
+  if (smallGraph) return;  // no heatmap needed for small graphs
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(transform.x, transform.y);
+  ctx.scale(transform.k, transform.k);
+  nodes.forEach(d => {
+    if (focusWindow.has(d.id)) return;  // rendered as SVG, skip
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = palette.gc[d.group] || palette.gc.other || '#335577';
+    ctx.beginPath();
+    const r = Math.max(2, Math.sqrt(d.importance || 1));
+    ctx.arc(d.x, d.y, r, 0, 2 * Math.PI);
+    ctx.fill();
+  });
+  ctx.restore();
 }
-function fogNodeOpacity(d) {
-  if (d.hop_distance === 0) return 1.0;
-  if (d.hop_distance < 0) return 0.03;
-  if (d.hop_distance <= 1) return 0.5;
-  if (d.hop_distance <= 2) return 0.3;
-  return 0.06;
-}
-function fogNodeRadius(d) {
-  if (d.hop_distance === 0) return nodeRadius(d) * 1.3;
-  if (d.hop_distance <= 2) return nodeRadius(d);
-  return nodeRadius(d) * 0.6;
-}
-function fogLabelOpacity(d) {
-  if (d.hop_distance === 0) return 1.0;
-  if (d.hop_distance === 1) return 0.45;
-  if (d.hop_distance === 2) return 0.2;
-  return 0;
-}
-function fogEdgeOpacity(d) {
-  const sh = nodeHopMap[typeof d.source==='object'?d.source.id:d.source] ?? 999;
-  const th = nodeHopMap[typeof d.target==='object'?d.target.id:d.target] ?? 999;
-  const minHop = Math.min(sh, th);
-  if (minHop === 0) return 0.5;
-  if (minHop <= 2) return 0.15;
-  return 0.02;
+if (!smallGraph) canvas.style.display = 'block';
+else canvas.style.display = 'none';
+
+// ── RESOLVE EDGE REFERENCES (no force simulation) ──────────────────
+// Positions are pre-computed. Manually resolve edge source/target to objects.
+edges.forEach(e => {
+  if (typeof e.source === 'string') e.source = nodeById.get(e.source) || e.source;
+  if (typeof e.target === 'string') e.target = nodeById.get(e.target) || e.target;
+});
+
+// ── FOCUS WINDOW RENDERING ─────────────────────────────────────────
+// Tour node set (always visible in focus window)
+const tourNodeIds = new Set();
+if (tours.length) {
+  tours.forEach(t => {
+    (t.steps||[]).forEach(s => { if (s.node) tourNodeIds.add(s.node); });
+    (t.keywords||[]).forEach(k => {
+      nodes.forEach(n => { if (n.id===k || n.id.startsWith(k+'.') || n.id.startsWith(k)) tourNodeIds.add(n.id); });
+    });
+  });
 }
 
-// ── DRAW ELEMENTS ───────────────────────────────────────────────────
-linkSel = gLinks.selectAll('line').data(edges).join('line')
-  .attr('stroke', edgeColor)
-  .attr('stroke-width', d => d.type==='CALLS'?0.8 : d.type==='INHERITS'?1.2 : 0.4)
-  .attr('stroke-opacity', fogEdgeOpacity);
+function getFocusNodes() {
+  return nodes.filter(d => focusWindow.has(d.id));
+}
+function getFocusEdges() {
+  return edges.filter(e => {
+    const sid = typeof e.source==='object'?e.source.id:e.source;
+    const tid = typeof e.target==='object'?e.target.id:e.target;
+    return focusWindow.has(sid) && focusWindow.has(tid);
+  });
+}
 
-nodeSel = gNodes.selectAll('circle').data(nodes).join('circle')
-  .attr('r', fogNodeRadius)
-  .attr('fill', nodeColor)
-  .attr('stroke', '#0a0a1a').attr('stroke-width', 0.5)
-  .attr('filter', fogNodeFilter)
-  .attr('fill-opacity', fogNodeOpacity)
-  .call(d3.drag().on('start',dragStart).on('drag',dragging).on('end',dragEnd));
+function focusHopDist(d) {
+  // Hop distance from current focus node (client-side)
+  if (!focusNodeId) return d.hop_distance;
+  if (d.id === focusNodeId) return 0;
+  if (tourNodeIds.has(d.id)) return 0;  // tour nodes always "close"
+  // Use pre-computed hop_distance as fallback
+  return d._focusHop != null ? d._focusHop : d.hop_distance;
+}
 
-labelSel = gLabels.selectAll('text').data(nodes).join('text')
-  .text(d=>d.label)
-  .attr('font-size', d => d.hop_distance===0?'10px' : d.hop_distance<=1?'7px' : '0px')
-  .attr('fill', nodeColor)
-  .attr('fill-opacity', fogLabelOpacity)
-  .attr('stroke','#0a0a12').attr('stroke-width',3)
-  .attr('stroke-opacity', fogLabelOpacity)
-  .attr('paint-order','stroke')
-  .attr('dx', d => nodeRadius(d)+3).attr('dy','0.35em')
-  .attr('pointer-events','none');
+function rebuildFocusView() {
+  const fn = getFocusNodes();
+  const fe = getFocusEdges();
+
+  linkSel = gLinks.selectAll('line').data(fe, d => {
+    const sid = typeof d.source==='object'?d.source.id:d.source;
+    const tid = typeof d.target==='object'?d.target.id:d.target;
+    return sid+'|'+tid+'|'+d.type;
+  }).join(
+    enter => enter.append('line')
+      .attr('stroke', edgeColor)
+      .attr('stroke-width', d => d.type==='CALLS'?0.8 : d.type==='INHERITS'?1.2 : 0.4)
+      .attr('stroke-opacity', 0)
+      .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y)
+      .call(s => s.transition().duration(300).attr('stroke-opacity', d => {
+        const fh = Math.min(focusHopDist(d.source), focusHopDist(d.target));
+        return fh === 0 ? 0.5 : fh <= 1 ? 0.3 : 0.15;
+      })),
+    update => update.call(s => s.transition().duration(300).attr('stroke-opacity', d => {
+      const fh = Math.min(focusHopDist(d.source), focusHopDist(d.target));
+      return fh === 0 ? 0.5 : fh <= 1 ? 0.3 : 0.15;
+    })),
+    exit => exit.transition().duration(300).attr('stroke-opacity', 0).remove()
+  );
+
+  nodeSel = gNodes.selectAll('circle').data(fn, d=>d.id).join(
+    enter => enter.append('circle')
+      .attr('cx', d=>d.x).attr('cy', d=>d.y)
+      .attr('r', d => nodeRadius(d))
+      .attr('fill', nodeColor)
+      .attr('stroke', '#0a0a1a').attr('stroke-width', 0.5)
+      .attr('fill-opacity', 0)
+      .call(d3.drag().on('start',dragStart).on('drag',dragging).on('end',dragEnd))
+      .call(s => s.transition().duration(300)
+        .attr('fill-opacity', d => {
+          const fh = focusHopDist(d);
+          return fh === 0 ? 1.0 : fh <= 1 ? 0.7 : 0.4;
+        })
+        .attr('filter', d => {
+          const fh = focusHopDist(d);
+          return fh === 0 ? 'url(#glow)' : fh <= 1 ? null : 'url(#blur-cloud)';
+        })
+        .attr('r', d => {
+          const fh = focusHopDist(d);
+          return fh === 0 ? nodeRadius(d)*1.3 : nodeRadius(d);
+        })
+      ),
+    update => update.call(s => s.transition().duration(300)
+      .attr('fill-opacity', d => {
+        const fh = focusHopDist(d);
+        return fh === 0 ? 1.0 : fh <= 1 ? 0.7 : 0.4;
+      })
+      .attr('filter', d => {
+        const fh = focusHopDist(d);
+        return fh === 0 ? 'url(#glow)' : fh <= 1 ? null : 'url(#blur-cloud)';
+      })
+      .attr('r', d => {
+        const fh = focusHopDist(d);
+        return fh === 0 ? nodeRadius(d)*1.3 : nodeRadius(d);
+      })
+    ),
+    exit => exit.transition().duration(300).attr('fill-opacity', 0).remove()
+  );
+  setupTooltip(nodeSel);
+  nodeSel.on('click', (ev, d) => { ev.stopPropagation(); openDrawer(d.id); updateFocusWindow(d.id); });
+
+  labelSel = gLabels.selectAll('text').data(fn, d=>d.id).join(
+    enter => enter.append('text')
+      .text(d=>d.label)
+      .attr('x', d=>d.x).attr('y', d=>d.y)
+      .attr('font-size', d => { const fh=focusHopDist(d); return fh===0?'10px':fh<=1?'7px':'0px'; })
+      .attr('fill', nodeColor).attr('fill-opacity', 0)
+      .attr('stroke','#0a0a12').attr('stroke-width',3).attr('stroke-opacity', 0)
+      .attr('paint-order','stroke')
+      .attr('dx', d => nodeRadius(d)+3).attr('dy','0.35em')
+      .attr('pointer-events','none')
+      .call(s => s.transition().duration(300)
+        .attr('fill-opacity', d => { const fh=focusHopDist(d); return fh===0?1:fh<=1?0.5:0.2; })
+        .attr('stroke-opacity', d => { const fh=focusHopDist(d); return fh===0?1:fh<=1?0.5:0.2; })
+      ),
+    update => update,
+    exit => exit.transition().duration(300).attr('fill-opacity',0).attr('stroke-opacity',0).remove()
+  );
+
+  drawHeatmap(currentTransform);
+}
+
+function updateFocusWindow(newFocusId) {
+  focusNodeId = newFocusId;
+  if (!newFocusId || smallGraph) { rebuildFocusView(); return; }
+
+  // BFS from focus node
+  const neighborhood = bfs(newFocusId, FOCUS_HOPS);
+
+  // Assign focus hop distances to nodes
+  nodes.forEach(d => { d._focusHop = neighborhood.get(d.id) ?? null; });
+
+  // Merge: neighborhood + tour nodes, capped at MAX_SVG_NODES
+  const candidates = new Set([...neighborhood.keys(), ...tourNodeIds]);
+  // If over budget, trim by priority
+  if (candidates.size > MAX_SVG_NODES) {
+    const sorted = [...candidates].map(id => ({
+      id, hop: neighborhood.get(id) ?? 999,
+      isTour: tourNodeIds.has(id),
+      imp: nodeById.get(id)?.importance || 0
+    })).sort((a,b) => {
+      // Focus node first, then by hop, then tour nodes, then importance
+      if (a.id === newFocusId) return -1;
+      if (b.id === newFocusId) return 1;
+      if (a.hop !== b.hop) return a.hop - b.hop;
+      if (a.isTour !== b.isTour) return a.isTour ? -1 : 1;
+      return b.imp - a.imp;
+    });
+    candidates.clear();
+    sorted.slice(0, MAX_SVG_NODES).forEach(x => candidates.add(x.id));
+  }
+
+  focusWindow.clear();
+  candidates.forEach(id => focusWindow.add(id));
+
+  rebuildFocusView();
+}
+
+// ── INITIAL RENDER ─────────────────────────────────────────────────
+rebuildFocusView();
 
 // ── TOOLTIP ─────────────────────────────────────────────────────────
 const tooltip = d3.select('#tooltip');
@@ -381,82 +548,11 @@ function setupTooltip(sel) {
     tooltip.style('left',(ev.clientX+12)+'px').style('top',(ev.clientY-10)+'px');
   }).on('mouseout', () => tooltip.style('display','none'));
 }
-setupTooltip(nodeSel);
 
-// ── TICK ────────────────────────────────────────────────────────────
-function ticked() {
-  linkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
-         .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
-  nodeSel.attr('cx',d=>d.x).attr('cy',d=>d.y);
-  labelSel.attr('x',d=>d.x).attr('y',d=>d.y);
-}
-
-// ── DRAG ────────────────────────────────────────────────────────────
-function dragStart(ev,d) { if(!ev.active) simulation.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; }
-function dragging(ev,d) { d.fx=ev.x; d.fy=ev.y; }
-function dragEnd(ev,d) { if(!ev.active) simulation.alphaTarget(0); d.fx=null; d.fy=null; }
-
-// ── BREATHING ───────────────────────────────────────────────────────
-function startBreathing() {
-  breathInterval = setInterval(() => {
-    if (frozen) return;
-    breathPhase++;
-    const wx = Math.sin(breathPhase*0.07)*18, wy = Math.cos(breathPhase*0.05)*12;
-    simulation.force('x', d3.forceX(W/2+80+wx).strength(0.018))
-              .force('y', d3.forceY(H/2+wy).strength(0.018));
-    if (breathPhase%16===0) simulation.alpha(Math.max(simulation.alpha(),0.04)).restart();
-  }, 500);
-}
-startBreathing();
-
-// ── FOG-OF-WAR ZOOM HANDLER ─────────────────────────────────────────
-function updateFogOfWar(transform) {
-  const zoomScale = transform.k;
-  const minZoom = 0.1, maxZoom = 3.0;
-  const zoomFactor = Math.min(1, Math.max(0, (zoomScale - minZoom) / (maxZoom - minZoom)));
-  const revealHops = Math.floor(zoomFactor * maxHopInData);
-
-  nodeSel.transition().duration(150)
-    .attr('fill-opacity', d => {
-      if (d.hop_distance === 0) return 1.0;
-      if (d.hop_distance < 0) return 0.02;
-      if (d.hop_distance <= revealHops) return 1.0 - (d.hop_distance / (revealHops + 1)) * 0.7;
-      return 0.06;
-    })
-    .attr('filter', d => {
-      if (d.hop_distance === 0) return 'url(#glow)';
-      if (d.hop_distance <= revealHops) return d.hop_distance <= 1 ? null : 'url(#blur-cloud)';
-      return 'url(#heavy-fog)';
-    })
-    .attr('r', d => {
-      if (d.hop_distance === 0) return nodeRadius(d) * 1.3;
-      if (d.hop_distance <= revealHops) return nodeRadius(d);
-      return nodeRadius(d) * 0.6;
-    });
-
-  setLabelOpacity(labelSel, 150, d => {
-    if (d.hop_distance === 0) return 1.0;
-    if (d.hop_distance <= revealHops && d.hop_distance <= 2) return 0.7 - d.hop_distance * 0.25;
-    return 0;
-  });
-  labelSel.transition().duration(150)
-    .attr('font-size', d => {
-      if (d.hop_distance === 0) return '10px';
-      if (d.hop_distance <= revealHops && d.hop_distance <= 1) return '7px';
-      if (d.hop_distance <= revealHops && d.hop_distance <= 3) return '5px';
-      return '0px';
-    });
-
-  linkSel.transition().duration(150)
-    .attr('stroke-opacity', d => {
-      const sh = nodeHopMap[typeof d.source==='object'?d.source.id:d.source] ?? 999;
-      const th = nodeHopMap[typeof d.target==='object'?d.target.id:d.target] ?? 999;
-      const minHop = Math.min(sh, th);
-      if (minHop === 0) return 0.5;
-      if (minHop <= revealHops) return 0.2;
-      return 0.02;
-    });
-}
+// ── DRAG (manual repositioning, no simulation) ─────────────────────
+function dragStart(ev,d) { d._dragOx = d.x; d._dragOy = d.y; }
+function dragging(ev,d) { d.x = ev.x; d.y = ev.y; rebuildFocusView(); }
+function dragEnd(ev,d) { /* position stays where dropped */ }
 
 // ── LABEL OPACITY HELPER ────────────────────────────────────────────
 function setLabelOpacity(sel, dur, opFn) {
@@ -509,34 +605,49 @@ function activateTour(idx) {
     narDiv.appendChild(div);
   });
 
-  // Highlight nodes
-  const tourNodeIds = new Set();
-  nodes.forEach(d => { if(isTourNode(d,tour)) tourNodeIds.add(d.id); });
-  const connected = getConnectedNodes(tourNodeIds);
+  // Build focus window from tour nodes + their neighborhoods
+  const thisTourNodes = new Set();
+  nodes.forEach(d => { if(isTourNode(d,tour)) thisTourNodes.add(d.id); });
+  const connected = getConnectedNodes(thisTourNodes);
 
+  // Set focus window to tour nodes + 1-hop connected
+  focusWindow.clear();
+  thisTourNodes.forEach(id => focusWindow.add(id));
+  connected.forEach(id => focusWindow.add(id));
+
+  // Set focus hop distances for tour display
+  nodes.forEach(d => {
+    if (thisTourNodes.has(d.id)) d._focusHop = 0;
+    else if (connected.has(d.id)) d._focusHop = 1;
+    else d._focusHop = 99;
+  });
+
+  rebuildFocusView();
+
+  // Tour-specific styling on top of focus view
   nodeSel.transition().duration(600)
     .attr('fill', nodeColor)
-    .attr('fill-opacity', d => tourNodeIds.has(d.id)?1 : connected.has(d.id)?0.3 : 0.04)
-    .attr('filter', d => tourNodeIds.has(d.id)?'url(#glow)':null)
-    .attr('r', d => tourNodeIds.has(d.id)?nodeRadius(d)*1.3:nodeRadius(d));
+    .attr('fill-opacity', d => thisTourNodes.has(d.id)?1 : connected.has(d.id)?0.3 : 0.04)
+    .attr('filter', d => thisTourNodes.has(d.id)?'url(#glow)':null)
+    .attr('r', d => thisTourNodes.has(d.id)?nodeRadius(d)*1.3:nodeRadius(d));
 
   setLabelOpacity(labelSel, 600, d =>
-    tourNodeIds.has(d.id)?1 : connected.has(d.id)?0.2 : 0
+    thisTourNodes.has(d.id)?1 : connected.has(d.id)?0.2 : 0
   );
   labelSel.transition().duration(600)
-    .attr('font-size', d => tourNodeIds.has(d.id)?'10px' : connected.has(d.id)?'6px':'0px');
+    .attr('font-size', d => thisTourNodes.has(d.id)?'10px' : connected.has(d.id)?'6px':'0px');
 
   linkSel.transition().duration(600)
     .attr('stroke-opacity', d => {
       const sid = typeof d.source==='object'?d.source.id:d.source;
       const tid = typeof d.target==='object'?d.target.id:d.target;
-      if(tourNodeIds.has(sid)&&tourNodeIds.has(tid)) return 0.7;
-      if(tourNodeIds.has(sid)||tourNodeIds.has(tid)) return 0.15;
+      if(thisTourNodes.has(sid)&&thisTourNodes.has(tid)) return 0.7;
+      if(thisTourNodes.has(sid)||thisTourNodes.has(tid)) return 0.15;
       return 0.01;
     });
 
   // Zoom to fit tour nodes
-  zoomToNodes([...tourNodeIds]);
+  zoomToNodes([...thisTourNodes]);
 }
 
 function spotlightStep(si) {
@@ -548,6 +659,9 @@ function spotlightStep(si) {
 
   const target = nodes.find(n => n.id === step.node);
   if (!target) return;
+
+  // Shift focus to this tour step
+  updateFocusWindow(step.node);
 
   const tourNodeIds = new Set();
   nodes.forEach(d => { if(isTourNode(d,tour)) tourNodeIds.add(d.id); });
@@ -615,23 +729,15 @@ function zoomToNodes(nodeIds) {
 function resetView() {
   activeTourIdx = -1;
   activeStepIdx = -1;
+  focusNodeId = null;
   document.querySelectorAll('.tour-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('narrative').innerHTML = '<div style="color:#666;font-size:0.8rem;padding:20px 0;">Select a tour to explore the codebase architecture.<br><small>Zoom in to reveal nodes from the fog.</small></div>';
+  document.getElementById('narrative').innerHTML = '<div style="color:#666;font-size:0.8rem;padding:20px 0;">Select a tour to explore the codebase architecture.<br><small>Click any node to explore its neighborhood.</small></div>';
 
-  // Restore fog-of-war defaults
-  nodeSel.transition().duration(600)
-    .attr('fill', nodeColor)
-    .attr('fill-opacity', fogNodeOpacity)
-    .attr('filter', fogNodeFilter)
-    .attr('r', fogNodeRadius);
-
-  setLabelOpacity(labelSel, 600, fogLabelOpacity);
-  labelSel.transition().duration(600)
-    .attr('font-size', d => d.hop_distance===0?'10px' : d.hop_distance<=1?'7px' : '0px');
-
-  linkSel.transition().duration(600)
-    .attr('stroke', edgeColor)
-    .attr('stroke-opacity', fogEdgeOpacity);
+  // Restore initial focus window
+  focusWindow.clear();
+  (smallGraph ? nodes.map(n=>n.id) : [...initialFocusIds]).forEach(id => focusWindow.add(id));
+  nodes.forEach(d => { d._focusHop = null; });
+  rebuildFocusView();
 
   svgEl.transition().duration(800).call(
     zoomBehavior.transform, d3.zoomIdentity.translate(0,0).scale(1)
@@ -649,6 +755,21 @@ searchBox.addEventListener('input', () => {
     const matches = new Set();
     nodes.forEach(d => { if(d.id.toLowerCase().includes(q)||d.label.toLowerCase().includes(q)) matches.add(d.id); });
     const connected = getConnectedNodes(matches);
+
+    // Expand focus window to include matches + their neighbors
+    if (!smallGraph && matches.size > 0) {
+      focusWindow.clear();
+      matches.forEach(id => focusWindow.add(id));
+      connected.forEach(id => focusWindow.add(id));
+      tourNodeIds.forEach(id => focusWindow.add(id));
+      // Assign focus hops for search
+      nodes.forEach(d => {
+        if (matches.has(d.id)) d._focusHop = 0;
+        else if (connected.has(d.id)) d._focusHop = 1;
+        else d._focusHop = 99;
+      });
+      rebuildFocusView();
+    }
 
     nodeSel.transition().duration(400)
       .attr('fill-opacity', d => matches.has(d.id)?1 : connected.has(d.id)?0.2 : 0.03)
@@ -687,8 +808,9 @@ nodes.forEach(n => { langCounts[n.language] = (langCounts[n.language]||0)+1; });
 const langList = Object.entries(langCounts).sort((a,b)=>b[1]-a[1]);
 const langStr = langList.map(([l,c])=>`${l} (${c})`).join(', ');
 const tourNodeCount = nodes.filter(d => d.hop_distance === 0).length;
-const fogLabel = tourNodeCount ? ` · ${tourNodeCount} focal · zoom to reveal` : '';
-document.getElementById('viz-subtitle').textContent = `${nodes.length} symbols · ${edges.length} edges${fogLabel}` + (isMultiLang ? ` · ${langStr}` : '');
+const fogLabel = tourNodeCount ? ` · ${tourNodeCount} focal · click to explore` : '';
+const focusLabel = smallGraph ? '' : ` · ${focusWindow.size} visible`;
+document.getElementById('viz-subtitle').textContent = `${nodes.length} symbols · ${edges.length} edges${fogLabel}${focusLabel}` + (isMultiLang ? ` · ${langStr}` : '');
 
 // ── LANGUAGE LEGEND ─────────────────────────────────────────────────
 if (isMultiLang) {
@@ -703,30 +825,26 @@ if (isMultiLang) {
 }
 
 // ── CONTROL BUTTONS ─────────────────────────────────────────────────
+document.getElementById('btn-live').textContent = 'Re-center';
+document.getElementById('btn-live').classList.remove('on');
 document.getElementById('btn-live').onclick = function() {
-  frozen = !frozen;
-  this.textContent = frozen ? 'Frozen' : 'Live';
-  this.classList.toggle('on', !frozen);
-  if (!frozen) simulation.alpha(0.05).restart();
+  // Re-center view on all visible nodes
+  const visibleIds = [...focusWindow];
+  if (visibleIds.length) zoomToNodes(visibleIds);
 };
 
 document.getElementById('btn-cb').onclick = function() {
   const useCB = !this.classList.contains('on');
   this.classList.toggle('on', useCB);
   palette = useCB ? PALETTE_CB : PALETTE_DEFAULT;
-  if (!colorByLang) {
-    nodeSel.transition().duration(400).attr('fill', nodeColor);
-    setLabelOpacity(labelSel, 400, d => d.importance>=15?0.9:d.importance>=5?0.5:0);
-    linkSel.transition().duration(400).attr('stroke', edgeColor);
-  }
+  rebuildFocusView();
 };
 
 document.getElementById('btn-lang').onclick = function() {
   colorByLang = !colorByLang;
   this.classList.toggle('on', colorByLang);
   document.getElementById('lang-legend').style.display = colorByLang ? 'block' : 'none';
-  nodeSel.transition().duration(400).attr('fill', nodeColor);
-  setLabelOpacity(labelSel, 400, d => d.importance>=15?0.9:d.importance>=5?0.5:0);
+  rebuildFocusView();
 };
 
 document.getElementById('btn-reset').onclick = resetView;
@@ -864,7 +982,7 @@ function openDrawer(nodeId) {
   detailContent.querySelectorAll('.detail-edge-target').forEach(el => {
     el.addEventListener('click', () => {
       const targetId = el.dataset.node;
-      if (detailIndex[targetId]) openDrawer(targetId);
+      if (detailIndex[targetId]) { updateFocusWindow(targetId); openDrawer(targetId); }
     });
   });
 }
@@ -875,11 +993,6 @@ function closeDrawer() {
 }
 
 document.getElementById('detail-close').onclick = closeDrawer;
-
-nodeSel.on('click', (ev, d) => {
-  ev.stopPropagation();
-  openDrawer(d.id);
-});
 
 svgEl.on('click', () => {
   if (activeDetailNode) closeDrawer();
@@ -1058,6 +1171,20 @@ document.getElementById('btn-suggest').onclick = function() {
       }
       const connected = getConnectedNodes(ids);
 
+      // Expand focus window to include suggestion nodes
+      if (!smallGraph && ids.size > 0) {
+        focusWindow.clear();
+        ids.forEach(id => focusWindow.add(id));
+        connected.forEach(id => focusWindow.add(id));
+        tourNodeIds.forEach(id => focusWindow.add(id));
+        nodes.forEach(d => {
+          if (ids.has(d.id)) d._focusHop = 0;
+          else if (connected.has(d.id)) d._focusHop = 1;
+          else d._focusHop = 99;
+        });
+        rebuildFocusView();
+      }
+
       nodeSel.transition().duration(500)
         .attr('fill-opacity', d => ids.has(d.id) ? 1 : connected.has(d.id) ? 0.2 : 0.03)
         .attr('r', d => ids.has(d.id) ? nodeRadius(d) * 1.3 : nodeRadius(d))
@@ -1149,7 +1276,17 @@ Focus on architectural patterns, data flow, and subsystems not already covered b
 };
 
 // ── INIT ────────────────────────────────────────────────────────────
-resetView();
+// On load: focus on first tour step (or hub node if no tours)
+if (tours.length > 0) {
+  activateTour(0);
+} else if (!smallGraph) {
+  // Focus on highest-importance hub node
+  const hub = [...nodes].sort((a,b) => b.importance - a.importance)[0];
+  if (hub) updateFocusWindow(hub.id);
+  else resetView();
+} else {
+  resetView();
+}
 </script>
 </body>
 </html>
