@@ -67,7 +67,8 @@ body { background:#0a0a1a; color:#e0e0e8; font-family:'Segoe UI',system-ui,-appl
 }
 #lang-legend .lang-item { display:inline-flex; align-items:center; margin-right:10px; margin-bottom:4px; }
 #lang-legend .lang-swatch { width:10px; height:10px; border-radius:50%; margin-right:4px; display:inline-block; }
-#graph-container { position:fixed; left:320px; top:0; right:0; bottom:0; }
+#graph-container { position:fixed; left:320px; top:0; right:0; bottom:0; transition: right 0.3s ease; }
+body.drawer-open #graph-container { right:400px; }
 svg { width:100%; height:100%; }
 #tooltip {
   position:fixed; display:none; padding:8px 12px; border-radius:6px;
@@ -103,6 +104,67 @@ svg { width:100%; height:100%; }
 #suggest-panel .sg-tour strong { color:#dde; }
 #suggest-panel .sg-tour .sg-nodes { color:#7788aa; font-size:0.72rem; margin-top:3px; }
 #suggest-panel .sg-info { color:#667; font-size:0.72rem; margin-bottom:8px; }
+/* ── RIGHT DRAWER (node detail panel) ──────────────────────────── */
+#detail-drawer {
+  position:fixed; top:0; right:-400px; width:400px; height:100vh;
+  background:linear-gradient(180deg,#0d0d24 0%,#0a0a1a 100%);
+  border-left:1px solid #1a1a3a; z-index:15;
+  display:flex; flex-direction:column;
+  transition: right 0.3s ease; overflow:hidden;
+}
+#detail-drawer.open { right:0; }
+#detail-drawer-header {
+  padding:14px 16px 10px; border-bottom:1px solid #1a1a3a;
+  display:flex; align-items:flex-start; justify-content:space-between; flex-shrink:0;
+}
+#detail-drawer-header .detail-id {
+  font-size:0.95rem; font-weight:600; color:#fff;
+  word-break:break-all; flex:1; margin-right:8px;
+}
+#detail-close {
+  width:28px; height:28px; border-radius:6px; border:1px solid #2a2a4a;
+  background:#12122a; color:#888; font-size:1rem; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:all 0.2s; flex-shrink:0;
+}
+#detail-close:hover { border-color:#5a5a8a; color:#ddd; }
+#detail-content {
+  flex:1; overflow-y:auto; padding:0 16px 16px;
+  scrollbar-width:thin; scrollbar-color:#2a2a4a transparent;
+}
+#detail-content::-webkit-scrollbar { width:6px; }
+#detail-content::-webkit-scrollbar-thumb { background:#2a2a4a; border-radius:3px; }
+.detail-meta { display:flex; gap:8px; flex-wrap:wrap; padding:8px 0 12px; font-size:0.72rem; }
+.detail-badge {
+  padding:3px 8px; border-radius:10px; border:1px solid #2a2a4a; background:#12122a;
+}
+.detail-badge.group { border-left:3px solid var(--group-color, #556); }
+.detail-section { margin-bottom:14px; }
+.detail-section-title {
+  font-size:0.65rem; text-transform:uppercase; letter-spacing:0.08em;
+  color:#556; font-weight:600; padding:8px 0 6px;
+  border-bottom:1px solid #1a1a3a; margin-bottom:8px;
+}
+.detail-edge-group { margin-bottom:6px; line-height:1.7; }
+.detail-edge-label { font-size:0.7rem; color:#7788aa; margin-right:6px; font-style:italic; }
+.detail-edge-target {
+  display:inline-block; padding:2px 7px; margin:2px 3px; border-radius:6px;
+  background:#12122a; border:1px solid #2a2a4a;
+  font-size:0.72rem; color:#aabbcc; cursor:pointer; transition:all 0.15s;
+}
+.detail-edge-target:hover { border-color:#5580aa; color:#ddeeff; background:#1a1a3a; }
+.detail-tour {
+  padding:6px 10px; margin-bottom:4px; border-radius:6px;
+  background:#0f0f28; border:1px solid #1a1a3a;
+  border-left:3px solid var(--tour-color, #556); font-size:0.78rem; color:#bbc;
+}
+.detail-source {
+  padding:10px 12px; border-radius:6px; background:#08081a;
+  border:1px solid #1a1a3a; font-family:'Cascadia Code','Fira Code',monospace;
+  font-size:0.72rem; color:#8899aa; line-height:1.5;
+  overflow-x:auto; white-space:pre-wrap; word-break:break-all;
+}
+.detail-hint { color:#445; font-size:0.7rem; text-align:center; padding:20px 0; font-style:italic; }
 </style>
 </head>
 <body>
@@ -129,6 +191,15 @@ svg { width:100%; height:100%; }
 </div>
 <div id="graph-container"><svg id="graph-svg"></svg></div>
 <div id="tooltip"></div>
+<div id="detail-drawer">
+  <div id="detail-drawer-header">
+    <div class="detail-id" id="detail-title">—</div>
+    <button id="detail-close">&#x2715;</button>
+  </div>
+  <div id="detail-content">
+    <div class="detail-hint">Click a node in the graph to inspect it.</div>
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script>
@@ -554,9 +625,167 @@ document.getElementById('btn-lang').onclick = function() {
 
 document.getElementById('btn-reset').onclick = resetView;
 
+// ── DETAIL DRAWER ───────────────────────────────────────────────────
+const TYPE_LABELS = {
+  CALLS:     {out:'calls \u2192', in:'\u2190 called by'},
+  IMPORTS:   {out:'imports \u2192', in:'\u2190 imported by'},
+  DEFINES:   {out:'defines \u2192', in:'\u2190 defined in'},
+  INHERITS:  {out:'inherits from \u2192', in:'\u2190 inherited by'},
+  SIGNATURE: {out:'has param \u2192', in:'\u2190 param of'},
+  RAISES:    {out:'raises \u2192', in:'\u2190 raised by'},
+  DECORATES: {out:'decorates \u2192', in:'\u2190 decorated by'},
+};
+
+function buildDetailIndex() {
+  const idx = {};
+  nodes.forEach(n => {
+    idx[n.id] = { node: n, outgoing: {}, incoming: {}, tours: [], files: new Set() };
+  });
+  edges.forEach(e => {
+    const sid = typeof e.source==='object' ? e.source.id : e.source;
+    const tid = typeof e.target==='object' ? e.target.id : e.target;
+    if (idx[sid]) {
+      if (!idx[sid].outgoing[e.type]) idx[sid].outgoing[e.type] = [];
+      idx[sid].outgoing[e.type].push({id:tid, file:e.file});
+      if (e.file) idx[sid].files.add(e.file);
+    }
+    if (idx[tid]) {
+      if (!idx[tid].incoming[e.type]) idx[tid].incoming[e.type] = [];
+      idx[tid].incoming[e.type].push({id:sid, file:e.file});
+      if (e.file) idx[tid].files.add(e.file);
+    }
+  });
+  tours.forEach(t => {
+    const kws = t.keywords || [];
+    nodes.forEach(n => {
+      if (kws.some(k => n.id===k || n.id.startsWith(k+'.') || n.id.endsWith('.'+k))) {
+        idx[n.id].tours.push({ name:t.name, color:t.color });
+      }
+    });
+  });
+  Object.values(idx).forEach(d => {
+    const seen = new Set();
+    d.tours = d.tours.filter(t => seen.has(t.name) ? false : (seen.add(t.name), true));
+  });
+  return idx;
+}
+const detailIndex = buildDetailIndex();
+
+function renderDetail(nodeId) {
+  const d = detailIndex[nodeId];
+  if (!d) return '';
+  const n = d.node;
+  const gc = palette.gc[n.group] || palette.gc.other || '#555570';
+
+  document.getElementById('detail-title').textContent = n.id;
+
+  let html = '';
+  html += '<div class="detail-meta">';
+  html += `<span class="detail-badge group" style="--group-color:${gc}">${n.group}</span>`;
+  html += `<span class="detail-badge">importance ${n.importance}</span>`;
+  html += `<span class="detail-badge">degree ${n.degree}</span>`;
+  const files = [...d.files];
+  if (files.length) html += `<span class="detail-badge">${files[0]}</span>`;
+  html += '</div>';
+
+  const allTypes = new Set([...Object.keys(d.outgoing), ...Object.keys(d.incoming)]);
+  if (allTypes.size) {
+    html += '<div class="detail-section"><div class="detail-section-title">Connections</div>';
+    for (const type of ['CALLS','IMPORTS','DEFINES','INHERITS','SIGNATURE','RAISES','DECORATES']) {
+      if (!allTypes.has(type)) continue;
+      const labels = TYPE_LABELS[type] || {out:type+' \u2192', in:'\u2190 '+type};
+      const out = d.outgoing[type] || [];
+      const inc = d.incoming[type] || [];
+      if (out.length) {
+        html += `<div class="detail-edge-group"><span class="detail-edge-label">${labels.out}</span>`;
+        out.slice(0,15).forEach(e => {
+          const lbl = e.id.includes('.') ? e.id.split('.').pop() : e.id;
+          html += `<span class="detail-edge-target" data-node="${e.id}" title="${e.id}">${lbl}</span>`;
+        });
+        if (out.length > 15) html += `<span class="detail-edge-label">+${out.length-15} more</span>`;
+        html += '</div>';
+      }
+      if (inc.length) {
+        html += `<div class="detail-edge-group"><span class="detail-edge-label">${labels.in}</span>`;
+        inc.slice(0,15).forEach(e => {
+          const lbl = e.id.includes('.') ? e.id.split('.').pop() : e.id;
+          html += `<span class="detail-edge-target" data-node="${e.id}" title="${e.id}">${lbl}</span>`;
+        });
+        if (inc.length > 15) html += `<span class="detail-edge-label">+${inc.length-15} more</span>`;
+        html += '</div>';
+      }
+    }
+    html += '</div>';
+  }
+
+  if (d.tours.length) {
+    html += '<div class="detail-section"><div class="detail-section-title">Referenced in Tours</div>';
+    d.tours.forEach(t => {
+      html += `<div class="detail-tour" style="--tour-color:${t.color}">${t.name}</div>`;
+    });
+    html += '</div>';
+  }
+
+  html += '<div class="detail-section"><div class="detail-section-title">Source</div>';
+  html += '<pre class="detail-source">';
+  html += `# File: ${files[0] || '(unknown)'}\n\n`;
+  if (d.outgoing.DEFINES) {
+    html += `# ${n.id} defines:\n`;
+    d.outgoing.DEFINES.slice(0,8).forEach(e => { html += `#   ${e.id}\n`; });
+  }
+  if (d.outgoing.CALLS) {
+    html += `# ${n.id} calls:\n`;
+    d.outgoing.CALLS.slice(0,8).forEach(e => { html += `#   ${e.id}\n`; });
+  }
+  if (d.incoming.CALLS) {
+    html += `# Called by:\n`;
+    d.incoming.CALLS.slice(0,8).forEach(e => { html += `#   ${e.id}\n`; });
+  }
+  html += '</pre></div>';
+
+  return html;
+}
+
+const detailDrawer = document.getElementById('detail-drawer');
+const detailContent = document.getElementById('detail-content');
+let activeDetailNode = null;
+
+function openDrawer(nodeId) {
+  activeDetailNode = nodeId;
+  detailContent.innerHTML = renderDetail(nodeId);
+  detailDrawer.classList.add('open');
+  document.body.classList.add('drawer-open');
+  detailContent.querySelectorAll('.detail-edge-target').forEach(el => {
+    el.addEventListener('click', () => {
+      const targetId = el.dataset.node;
+      if (detailIndex[targetId]) openDrawer(targetId);
+    });
+  });
+}
+function closeDrawer() {
+  activeDetailNode = null;
+  detailDrawer.classList.remove('open');
+  document.body.classList.remove('drawer-open');
+}
+
+document.getElementById('detail-close').onclick = closeDrawer;
+
+nodeSel.on('click', (ev, d) => {
+  ev.stopPropagation();
+  openDrawer(d.id);
+});
+svgEl.on('click', () => {
+  if (activeDetailNode) closeDrawer();
+});
+
 // ── KEYBOARD NAV ────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.target === searchBox) return;
+  if (e.key === 'Escape') {
+    if (activeDetailNode) closeDrawer();
+    else resetView();
+    return;
+  }
   if (e.key==='ArrowRight'||e.key==='ArrowDown') {
     e.preventDefault();
     if (activeTourIdx>=0 && activeStepIdx < tours[activeTourIdx].steps.length-1) spotlightStep(activeStepIdx+1);
@@ -566,7 +795,6 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (activeStepIdx>0) spotlightStep(activeStepIdx-1);
   }
-  if (e.key==='Escape') resetView();
 });
 
 // ── SEARCH SUGGESTIONS ──────────────────────────────────────────────

@@ -1,15 +1,18 @@
 """
 Visualization
 =============
-Generate tour-focused D3 HTML visualizations and markdown reports from
-memory tours. Memory tours are the single canonical tour format — the
-viz-specific ``tours.json`` schema is retired.
+Generate D3 HTML visualizations and markdown reports from a hypergraph.
+
+Two modes:
+  - **Full graph**: visualize all nodes and edges — no tours required.
+    Generated automatically on index as ``.hce_cache/graph.html``.
+  - **Tour-focused**: overlay reasoning tours on the graph so humans can
+    follow an agent's exploration path.
 
 The pipeline:
-  1. Select tours (by tag or ID)
-  2. Extract a focused subgraph (seed nodes from tours + 1-hop neighborhood)
-  3. Convert memory tours to the viz template format
-  4. Inject into the D3 HTML template and/or render a markdown report
+  1. Extract graph data (full graph or tour-focused subgraph)
+  2. Optionally convert memory tours to viz overlay format
+  3. Inject into the D3 HTML template and/or render a markdown report
 """
 
 from __future__ import annotations
@@ -136,12 +139,19 @@ def collect_seed_nodes(tours: list[MemoryTour]) -> set[str]:
 def extract_tour_subgraph(
     builder: HypergraphBuilder,
     tours: list[MemoryTour],
+    *,
+    edge_types: set[str] | None = None,
 ) -> dict:
     """Extract the 1-hop neighborhood of all tour seed nodes.
+
+    Args:
+        edge_types: If provided, only include these edge types (overrides
+            the default ``STRUCTURAL_TYPES`` filter).
 
     Returns ``{"nodes": [...], "edges": [...], "group_colors": {...}}``
     in the format expected by the viz template injection pipeline.
     """
+    allowed_types = edge_types if edge_types is not None else STRUCTURAL_TYPES
     seed_nodes = collect_seed_nodes(tours)
 
     degree: dict[str, int] = defaultdict(int)
@@ -161,7 +171,7 @@ def extract_tour_subgraph(
         etype_raw = str(rec.edge_type)
         # EdgeType enum stringifies as "EdgeType.IMPORTS" — extract the suffix
         etype = etype_raw.split(".")[-1] if "." in etype_raw else etype_raw
-        if etype not in STRUCTURAL_TYPES:
+        if etype not in allowed_types:
             continue
         for s in rec.sources:
             for t in rec.targets:
@@ -195,6 +205,73 @@ def extract_tour_subgraph(
         imp = 2 * (calls_degree.get(nid, 0) + inherits_degree.get(nid, 0)) + d
         if _is_seed_related(nid, seed_nodes):
             imp = max(imp, 15)
+        group = _auto_assign_group(nid, node_files.get(nid, ""))
+        groups_seen.add(group)
+        label = nid.split(".")[-1] if "." in nid else nid
+        nodes.append({
+            "id": nid,
+            "label": label,
+            "group": group,
+            "degree": d,
+            "importance": imp,
+            "language": "python",
+        })
+
+    group_colors = {g: _group_color_from_name(g) for g in sorted(groups_seen)}
+
+    return {"nodes": nodes, "edges": edges, "group_colors": group_colors}
+
+
+def extract_full_graph(builder: HypergraphBuilder) -> dict:
+    """Extract ALL nodes and edges from the builder for full-graph viz.
+
+    No tour filtering — includes everything. The D3 template handles
+    visual triage via importance-based sizing/opacity.
+
+    Returns ``{"nodes": [...], "edges": [...], "group_colors": {...}}``
+    in the format expected by the viz template injection pipeline.
+    """
+    degree: dict[str, int] = defaultdict(int)
+    calls_degree: dict[str, int] = defaultdict(int)
+    inherits_degree: dict[str, int] = defaultdict(int)
+    node_files: dict[str, str] = {}
+    edges: list[dict] = []
+
+    for eid, rec in builder._edge_store.items():
+        etype_raw = str(rec.edge_type)
+        etype = etype_raw.split(".")[-1] if "." in etype_raw else etype_raw
+        if etype not in STRUCTURAL_TYPES:
+            continue
+        for s in rec.sources:
+            for t in rec.targets:
+                edges.append({
+                    "source": s,
+                    "target": t,
+                    "type": etype,
+                    "file": rec.source_path,
+                })
+                degree[s] += 1
+                degree[t] += 1
+                if etype == "CALLS":
+                    calls_degree[s] += 1
+                    calls_degree[t] += 1
+                elif etype == "INHERITS":
+                    inherits_degree[s] += 1
+                    inherits_degree[t] += 1
+                if rec.source_path:
+                    node_files.setdefault(s, rec.source_path)
+                    node_files.setdefault(t, rec.source_path)
+
+    all_node_ids: set[str] = set()
+    for e in edges:
+        all_node_ids.add(e["source"])
+        all_node_ids.add(e["target"])
+
+    groups_seen: set[str] = set()
+    nodes: list[dict] = []
+    for nid in sorted(all_node_ids):
+        d = degree.get(nid, 0)
+        imp = 2 * (calls_degree.get(nid, 0) + inherits_degree.get(nid, 0)) + d
         group = _auto_assign_group(nid, node_files.get(nid, ""))
         groups_seen.add(group)
         label = nid.split(".")[-1] if "." in nid else nid
@@ -379,20 +456,29 @@ def _generate_html_from_prepared(
 
 def generate_html(
     builder: HypergraphBuilder,
-    tours: list[MemoryTour],
     output_path: str | Path,
     *,
+    tours: list[MemoryTour] | None = None,
+    edge_types: set[str] | None = None,
     title: str = "Codebase Architecture",
     template_path: str | Path | None = None,
 ) -> Path:
-    """Generate a self-contained D3 HTML visualization from memory tours.
+    """Generate a self-contained D3 HTML visualization.
+
+    If ``tours`` are provided, extracts a focused subgraph around tour nodes
+    and overlays the tours as guided walks. If ``tours`` is None or empty,
+    visualizes the full graph with no tour overlays.
 
     Returns the path to the written HTML file.
     """
     output_path = Path(output_path)
-    graph_data = extract_tour_subgraph(builder, tours)
-    graph_node_ids = {n["id"] for n in graph_data["nodes"]}
-    viz_tours = memory_tours_to_viz(tours, graph_node_ids)
+    if tours:
+        graph_data = extract_tour_subgraph(builder, tours, edge_types=edge_types)
+        graph_node_ids = {n["id"] for n in graph_data["nodes"]}
+        viz_tours = memory_tours_to_viz(tours, graph_node_ids)
+    else:
+        graph_data = extract_full_graph(builder)
+        viz_tours = []
     return _generate_html_from_prepared(
         graph_data, viz_tours, output_path,
         title=title, template_path=template_path,
@@ -619,52 +705,64 @@ def generate_report(
 
 def generate_visualization(
     builder: HypergraphBuilder,
-    tours: list[MemoryTour],
     output_base: str | Path,
     *,
+    tours: list[MemoryTour] | None = None,
+    edge_types: set[str] | None = None,
     title: str = "Codebase Architecture",
     template_path: str | Path | None = None,
     target_codebase: str = "",
 ) -> dict:
-    """Generate both D3 HTML and markdown report from memory tours.
+    """Generate D3 HTML visualization, optionally with tour overlays.
+
+    If ``tours`` are provided, extracts a focused subgraph and generates
+    both HTML and a markdown report. If ``tours`` is None or empty,
+    visualizes the full graph (HTML only, no markdown report).
 
     Args:
         builder: The loaded HypergraphBuilder.
-        tours: Selected memory tours to visualize.
         output_base: Base path without extension. Writes ``<base>.html``
-            and ``<base>.md``.
+            and optionally ``<base>.md``.
+        tours: Optional memory tours to overlay as guided walks.
+        edge_types: If provided, only include these edge types in the
+            subgraph (overrides the default structural types filter).
         title: Title for both outputs.
         template_path: Override path to ``viz_template.html``.
         target_codebase: Codebase name for the markdown report header.
 
     Returns:
-        Dict with keys: ``html``, ``md``, ``tours``, ``nodes``, ``edges``.
+        Dict with keys: ``html``, ``md`` (or None), ``tours``, ``nodes``, ``edges``.
     """
     output_base = Path(output_base)
     html_path = output_base.with_suffix(".html")
-    md_path = output_base.with_suffix(".md")
 
-    # Extract subgraph once and reuse for HTML
-    graph_data = extract_tour_subgraph(builder, tours)
-    graph_node_ids = {n["id"] for n in graph_data["nodes"]}
-    viz_tours = memory_tours_to_viz(tours, graph_node_ids)
+    if tours:
+        graph_data = extract_tour_subgraph(builder, tours, edge_types=edge_types)
+        graph_node_ids = {n["id"] for n in graph_data["nodes"]}
+        viz_tours = memory_tours_to_viz(tours, graph_node_ids)
+    else:
+        graph_data = extract_full_graph(builder)
+        viz_tours = []
 
     html_out = _generate_html_from_prepared(
         graph_data, viz_tours, html_path,
         title=title, template_path=template_path,
     )
 
-    report_title = f"Memory Tour Report: {title}" if title != "Codebase Architecture" else "Memory Tour Report"
-    md_out = generate_report(
-        tours, md_path,
-        title=report_title,
-        target_codebase=target_codebase,
-    )
+    md_out = None
+    if tours:
+        md_path = output_base.with_suffix(".md")
+        report_title = f"Memory Tour Report: {title}" if title != "Codebase Architecture" else "Memory Tour Report"
+        md_out = str(generate_report(
+            tours, md_path,
+            title=report_title,
+            target_codebase=target_codebase,
+        ))
 
     return {
         "html": str(html_out),
-        "md": str(md_out),
-        "tours": len(tours),
+        "md": md_out,
+        "tours": len(tours) if tours else 0,
         "nodes": len(graph_data["nodes"]),
         "edges": len(graph_data["edges"]),
     }

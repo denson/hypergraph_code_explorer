@@ -211,42 +211,69 @@ class HypergraphSession:
         ]
         return scaffold_prompt(plan, existing_tour_names=existing)
 
-    # ---- Visualization ---------------------------------------------------
+    # ---- Blast radius analysis -------------------------------------------
 
-    def visualize(
+    def blast_radius(
         self,
+        symbol: str,
         *,
+        depth: int = 2,
+        task_description: str = "",
         tags: list[str] | None = None,
-        tour_ids: list[str] | None = None,
-        output: str = "visualization",
-        title: str = "",
-    ) -> dict:
-        """Generate tour-focused D3 HTML + markdown report.
+    ) -> MemoryTour:
+        """Generate a task-oriented tour for blast radius analysis.
 
-        Selects tours by tag or ID, extracts a focused subgraph, and writes
-        both an interactive HTML visualization and a markdown report.
-
-        Returns dict with keys: html, md, tours, nodes, edges.
+        Runs multi-perspective lookups (all edges, RAISES, INHERITS), merges
+        the results, scaffolds a tour, and annotates each step with a
+        task-specific ``context_query``.
         """
-        from .visualization import select_tours, generate_visualization
-
-        store = self._get_tour_store()
-        tours = select_tours(store, tags=tags, tour_ids=tour_ids)
-        if not tours:
-            return {"error": "No memory tours found matching the criteria."}
-
-        viz_title = title or "Codebase Architecture"
-        target_codebase = str(self._cache_dir) if self._cache_dir else ""
-
-        return generate_visualization(
-            self._builder, tours, output,
-            title=viz_title,
-            target_codebase=target_codebase,
+        # Multi-perspective lookups
+        plan_all = self.lookup(symbol, direction="both", depth=depth)
+        plan_raises = self.lookup(
+            symbol, edge_types=["RAISES"], direction="both", depth=depth,
+        )
+        plan_inherits = self.lookup(
+            symbol, edge_types=["INHERITS"], direction="both", depth=depth,
         )
 
-    # ---- Persistence ---------------------------------------------------
+        # Merge (plan.merge deduplicates internally)
+        plan_all.merge(plan_raises)
+        plan_all.merge(plan_inherits)
 
-    def save(self, path: str | Path) -> None:
-        path = Path(path)
-        path.mkdir(parents=True, exist_ok=True)
-        self._builder.save(path / "builder.pkl")
+        # Scaffold the tour
+        tour_tags = ["blast-radius"] + (tags or [])
+        tour = scaffold_from_plan(
+            plan_all,
+            name=f"Blast radius: {symbol}",
+            tags=tour_tags,
+        )
+
+        # Annotate each step with a context_query based on edge type
+        task_clause = task_description or f"changes to {symbol}"
+        for step in tour.steps:
+            et = step.edge_type.upper() if step.edge_type else ""
+            if et == "RAISES":
+                step.context_query = (
+                    f"Does this location raise or catch {symbol}? "
+                    f"How would it be affected by: {task_clause}"
+                )
+            elif et == "CALLS":
+                step.context_query = (
+                    f"This code calls {symbol} or is called by it. "
+                    f"Would the behavior change if {task_clause}?"
+                )
+            elif et == "INHERITS":
+                step.context_query = (
+                    f"This inherits from or is inherited by {symbol}. "
+                    f"Would it be affected by: {task_clause}"
+                )
+            else:
+                step.context_query = (
+                    f"How does this symbol interact with {symbol}? "
+                    f"Would it be affected by: {task_clause}"
+                )
+
+        # Persist and return
+        store = self._get_tour_store()
+        store.add(tour)
+        return tour

@@ -171,16 +171,34 @@ def main():
         help="Query to run; the result is turned into an LLM prompt")
     tour_scaffold_p.add_argument("--cache-dir", type=str, default=None)
 
+    # ---- blast-radius ----
+    blast_p = subparsers.add_parser("blast-radius",
+        help="Generate a tour-guided blast radius analysis for a symbol")
+    blast_p.add_argument("symbol", type=str,
+        help="Symbol to analyse (e.g. 'ValidationError')")
+    blast_p.add_argument("--depth", type=int, default=2,
+        help="Traversal depth (default: 2)")
+    blast_p.add_argument("--task", type=str, default="",
+        help="Task description for context queries "
+             "(e.g. 'introduce CoercionError subclass')")
+    blast_p.add_argument("--output", "-o", type=str, default="blast_analysis",
+        help="Output basename (default: blast_analysis)")
+    blast_p.add_argument("--cache-dir", type=str, default=None)
+    blast_p.add_argument("--verbose", "-v", action="store_true")
+
     # ---- visualize ----
     viz_p = subparsers.add_parser("visualize",
-        help="Generate D3 HTML visualization + markdown report from memory tours")
+        help="Generate D3 HTML visualization. Tours are optional overlays — "
+             "without tours, visualizes the full graph")
     viz_p.add_argument("--tags", type=str, default=None,
         help="Comma-separated tags to filter tours (e.g. --tags security,auth)")
     viz_p.add_argument("--tours", type=str, default=None,
         help="Comma-separated tour IDs for explicit selection (overrides --tags)")
+    viz_p.add_argument("--full", action="store_true",
+        help="Force full-graph visualization even if tours exist")
     viz_p.add_argument("--output", "-o", type=str, default="visualization",
         help="Output basename without extension (default: visualization). "
-             "Writes <basename>.html and <basename>.md")
+             "Writes <basename>.html and optionally <basename>.md")
     viz_p.add_argument("--title", type=str, default=None,
         help="Title for both outputs (default: derived from cache dir)")
     viz_p.add_argument("--cache-dir", type=str, default=None)
@@ -201,6 +219,7 @@ def main():
         "embed": _run_embed,
         "stats": _run_stats,
         "tour": _run_tour,
+        "blast-radius": _run_blast_radius,
         "visualize": _run_visualize,
         "server": _run_server,
     }
@@ -286,6 +305,18 @@ def _run_index(args):
         embeddings.embed_all_from_builder(pipeline.builder)
         if pipeline._cache_dir:
             embeddings.save(pipeline._cache_dir / "embeddings.pkl")
+
+    # Auto-generate baseline visualization
+    if pipeline._cache_dir:
+        try:
+            from .visualization import generate_html
+            viz_path = pipeline._cache_dir / "graph.html"
+            generate_html(pipeline.builder, viz_path, title=Path(args.path).name)
+            if args.verbose:
+                print(f"  Visualization: {viz_path}")
+        except Exception as e:
+            if args.verbose:
+                print(f"  Warning: Could not generate visualization: {e}")
 
     print("\n=== Index Complete ===")
     print(json.dumps(stats, indent=2))
@@ -602,6 +633,41 @@ def _run_tour(args):
         print(prompt)
 
 
+def _run_blast_radius(args):
+    from .api import HypergraphSession
+    from .memory_tours import generate_analysis_prompt
+
+    cache_dir = _resolve_cache_dir(args.cache_dir)
+    session = HypergraphSession.load(cache_dir)
+
+    tour = session.blast_radius(
+        args.symbol,
+        depth=args.depth,
+        task_description=args.task,
+    )
+
+    print(f"Blast radius tour: {tour.name}")
+    print(f"  ID: {tour.id}")
+    print(f"  Steps: {len(tour.steps)}")
+    print(f"  Keywords: {', '.join(tour.keywords[:10])}")
+
+    # Write analysis prompt
+    prompt = generate_analysis_prompt(
+        tour, task_description=args.task,
+    )
+    prompt_path = Path(args.output + "_prompt.md")
+    prompt_path.write_text(prompt, encoding="utf-8")
+    print(f"  Prompt: {prompt_path}")
+
+    # Generate visualization
+    result = session.visualize(
+        tour_ids=[tour.id], output=args.output,
+    )
+    print(f"  HTML: {result['html']}  ({result['nodes']} nodes, {result['edges']} edges)")
+    if result["md"]:
+        print(f"  Report: {result['md']}")
+
+
 def _run_visualize(args):
     from .graph.builder import HypergraphBuilder
     from .memory_tours import MemoryTourStore
@@ -609,17 +675,18 @@ def _run_visualize(args):
 
     cache_dir = _resolve_cache_dir(args.cache_dir)
     builder = HypergraphBuilder.load(cache_dir / "builder.pkl")
-    store = MemoryTourStore(cache_dir)
 
-    tags = args.tags.split(",") if args.tags else None
-    tour_ids = args.tours.split(",") if args.tours else None
-
-    tours = select_tours(store, tags=tags, tour_ids=tour_ids)
-    if not tours:
-        print("Error: No memory tours found matching the criteria.", file=sys.stderr)
-        if not tags and not tour_ids:
-            print("  Run 'hce tour create <query>' first to create tours.", file=sys.stderr)
-        sys.exit(1)
+    tours = None
+    if not args.full:
+        store = MemoryTourStore(cache_dir)
+        tags = args.tags.split(",") if args.tags else None
+        tour_ids = args.tours.split(",") if args.tours else None
+        selected = select_tours(store, tags=tags, tour_ids=tour_ids)
+        if selected:
+            tours = selected
+        elif tags or tour_ids:
+            print("No tours matched the filter — generating full graph visualization.",
+                  file=sys.stderr)
 
     # Derive title from cache dir parent name if not specified
     title = args.title
@@ -629,14 +696,19 @@ def _run_visualize(args):
     target_codebase = str(cache_dir.parent) if cache_dir else ""
 
     result = generate_visualization(
-        builder, tours, args.output,
+        builder, args.output,
+        tours=tours,
         title=title,
         target_codebase=target_codebase,
     )
 
-    print(f"Generated visualization from {result['tours']} tours:")
+    if result["tours"]:
+        print(f"Generated visualization from {result['tours']} tours:")
+    else:
+        print("Generated full graph visualization:")
     print(f"  HTML: {result['html']}  ({result['nodes']} nodes, {result['edges']} edges)")
-    print(f"  Report: {result['md']}")
+    if result["md"]:
+        print(f"  Report: {result['md']}")
 
 
 def _run_server(args):

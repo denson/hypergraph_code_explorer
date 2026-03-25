@@ -34,6 +34,7 @@ class MemoryTourStep:
     text: str
     file: str = ""
     edge_type: str = ""
+    context_query: str = ""
 
     def to_dict(self) -> dict:
         d: dict = {"node": self.node, "text": self.text}
@@ -41,6 +42,8 @@ class MemoryTourStep:
             d["file"] = self.file
         if self.edge_type:
             d["edge_type"] = self.edge_type
+        if self.context_query:
+            d["context_query"] = self.context_query
         return d
 
     @classmethod
@@ -50,6 +53,7 @@ class MemoryTourStep:
             text=d["text"],
             file=d.get("file", ""),
             edge_type=d.get("edge_type", ""),
+            context_query=d.get("context_query", ""),
         )
 
 
@@ -343,6 +347,64 @@ def scaffold_prompt(
     lines.append(
         "Focus on architectural patterns and dependencies. Each step should "
         "explain why the symbol matters and what would break without it."
+    )
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Analysis prompt: convert a tour into a Stage 2 analysis work order
+# ---------------------------------------------------------------------------
+
+def generate_analysis_prompt(
+    tour: MemoryTour,
+    *,
+    task_description: str = "",
+    output_format: str = "markdown",
+) -> str:
+    """Convert a memory tour into a structured analysis prompt.
+
+    This is the Stage 2 entry point for tour-guided analysis. The returned
+    prompt instructs an LLM to walk through the tour step by step, answering
+    each step's context_query with evidence from the code.
+    """
+    lines: list[str] = []
+    lines.append(
+        "You are performing a blast radius analysis. Walk through the following "
+        "tour step by step. At each step, read the indicated file, answer the "
+        "context query with evidence (file:line, code snippets, risk assessment), "
+        "and build on your findings from previous steps."
+    )
+    lines.append("")
+
+    if task_description:
+        lines.append(f"Task: {task_description}")
+        lines.append("")
+
+    lines.append(f"## Tour: {tour.name}")
+    lines.append("")
+
+    for i, step in enumerate(tour.steps, 1):
+        lines.append(f"### Step {i}: {step.node}")
+        if step.file:
+            lines.append(f"- File: {step.file}")
+        if step.edge_type:
+            lines.append(f"- Relationship: {step.edge_type}")
+        if step.context_query:
+            lines.append(f"- Question: {step.context_query}")
+        lines.append(f"- Context: {step.text}")
+        lines.append("")
+        lines.append("[Answer this question with evidence before moving to the next step.]")
+        lines.append("")
+
+    lines.append("## Output format")
+    lines.append("For each step, provide:")
+    lines.append("1. What the code does at this location (with file:line references)")
+    lines.append("2. Answer to the context query")
+    lines.append("3. Risk assessment (high/medium/low) with justification")
+    lines.append("4. Any connections to findings from previous steps")
+    lines.append("")
+    lines.append("After all steps, provide a summary of the complete blast radius."
     )
 
     return "\n".join(lines)

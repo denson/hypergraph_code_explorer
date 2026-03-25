@@ -142,6 +142,69 @@ s.memory_tour_promote(tour['id'])
 "
 ```
 
+### Visualization — helping humans see what you found
+
+Visualizations help the human understand the codebase structure and follow your reasoning. There are two modes:
+
+**Full graph (generated automatically on index):**
+When you index a codebase, HCE auto-generates `.hce_cache/graph.html` — an interactive D3 force-directed graph of all symbols and relationships. Tell the human about it:
+> "I've generated an interactive graph visualization at `.hce_cache/graph.html` — open it in a browser to explore the codebase structure."
+
+**Reasoning tours — show the human your exploration path:**
+When you've traced a complex path through the graph (blast radius, bug tracing, architecture exploration), create a memory tour from your findings and generate a visualization. This helps the human understand HOW you arrived at your conclusions.
+
+```bash
+python -c "
+from hypergraph_code_explorer.api import HypergraphSession
+s = HypergraphSession.load('<source-root>/.hce_cache')
+
+# 1. Create a tour from your exploration
+plan = s.query('how does authentication work', depth=2)
+tour = s.memory_tour_create(plan, name='Auth Flow', tags=['auth'])
+
+# 2. Generate viz with your reasoning tour overlaid on the graph
+result = s.visualize(tags=['auth'], output='auth_exploration')
+print(result)
+"
+```
+
+The visualization shows:
+- The graph with your tour(s) highlighted as guided walks
+- Clickable nodes with connection details (right drawer panel)
+- The human can follow your reasoning step-by-step in the sidebar
+- Search, zoom, colorblind mode, and keyboard navigation (arrow keys)
+
+**`s.visualize(tags=None, tour_ids=None, full_graph=False, output='visualization', title='')`** — Generate D3 HTML. If tours are selected, creates a focused subgraph + markdown report. If no tours match (or `full_graph=True`), visualizes the entire graph.
+
+## Task workflow: Blast radius analysis
+
+Use the two-stage pattern to ensure structural information drives the analysis:
+
+**Stage 1 — Generate the analysis tour:**
+
+```bash
+python -c "
+from hypergraph_code_explorer.api import HypergraphSession
+from hypergraph_code_explorer.memory_tours import generate_analysis_prompt
+s = HypergraphSession.load('<source-root>/.hce_cache')
+tour = s.blast_radius('ValidationError', depth=2, task_description='introduce CoercionError subclass')
+prompt = generate_analysis_prompt(tour, task_description='introduce CoercionError subclass')
+with open('blast_analysis_prompt.md', 'w') as f: f.write(prompt)
+result = s.visualize(tour_ids=[tour.id], output='blast_analysis')
+print(f'Tour: {tour.name} ({len(tour.steps)} steps)')
+print(f'Prompt: blast_analysis_prompt.md')
+print(result)
+"
+```
+
+This produces:
+- `blast_analysis_prompt.md` — the analysis instructions (give this to the analysis agent)
+- `blast_analysis.html` — interactive graph visualization
+- `blast_analysis.md` — markdown tour report
+
+**Stage 2 — Run the analysis:**
+Read `blast_analysis_prompt.md` and follow its instructions step by step. Each step tells you which file to read, what relationship to check, and what question to answer with evidence.
+
 ## Workflow
 
 ### Step 1: Find the source root
@@ -160,6 +223,8 @@ Check `pyproject.toml`, `package.json`, `go.mod`, or `Cargo.toml` if unsure.
 
 Check for `.hce_cache/`. If found, tell the user "Found an existing HCE index — loading from cache." If not, tell the user you're indexing and run the index command. Report results: files indexed, symbols, relationships.
 
+After indexing, tell the human about the auto-generated visualization: "An interactive graph visualization is available at `.hce_cache/graph.html`."
+
 ### Step 3: Explore
 
 Start broad, then narrow:
@@ -171,6 +236,8 @@ Start broad, then narrow:
 5. **Query** — Ask questions: `s.query('how does request validation work')`
 
 After each operation, summarize findings before deciding the next step.
+
+If your exploration was complex (multi-hop traces, blast radius analysis, bug tracing), create a memory tour and generate a visualization so the human can follow your reasoning path.
 
 ### Step 4: Read source only when needed
 

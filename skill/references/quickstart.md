@@ -2,36 +2,35 @@
 
 ## Install
 
-HCE requires Python 3.11+. This skill lives inside the HCE repo at `skill/`, so install from the repo root:
+HCE requires Python 3.11+ and git. Install from GitHub in one step:
 
-```bash
-# Navigate to the repo root (one level up from skill/)
-cd "$(dirname "<skill-dir>")"
+```
+pip install git+https://github.com/denson/hypergraph_code_explorer.git
+```
 
-# Install with pip (editable mode so `hce` CLI lands on PATH)
-pip install -e .
+If the repo is private and you need authentication:
+```
+pip install git+https://<GITHUB_TOKEN>@github.com/denson/hypergraph_code_explorer.git
+```
 
-# Verify
+Or clone first, then install in editable mode (useful for development):
+```
+git clone https://github.com/denson/hypergraph_code_explorer.git
+pip install -e hypergraph_code_explorer
+```
+
+Verify it worked:
+```
 hce --help
 ```
 
-If you're in a Cowork or sandboxed environment, add `--break-system-packages`:
-```bash
-pip install -e . --break-system-packages
-```
+If `hce` is not found after install, it's in your Python Scripts directory (e.g. `C:\Python311\Scripts\hce.exe`). Run `python -m hypergraph_code_explorer` as a fallback.
 
-If the repo isn't cloned yet:
-```bash
-git clone https://github.com/denson/hypergraph_code_explorer.git
-cd hypergraph_code_explorer
-pip install -e .
+Optional extras (append to any install command above):
 ```
-
-Optional extras:
-```bash
-pip install -e ".[embed]"   # Tier 4 semantic search (sentence-transformers)
-pip install -e ".[server]"  # MCP server mode
-pip install -e ".[all]"     # Everything
+pip install "hypergraph_code_explorer[embed]"   # Tier 4 semantic search
+pip install "hypergraph_code_explorer[server]"  # MCP server mode
+pip install "hypergraph_code_explorer[all]"     # Everything
 ```
 
 ## Index a codebase

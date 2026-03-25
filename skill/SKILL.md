@@ -23,14 +23,21 @@ If the user opts out of visualization ("just index this", "I only want to query"
 - **User wants a visualization (the default)** → Read this entire file. It covers extraction, querying the graph to understand the architecture, tour design, and the D3.js visualization.
 - **An `.hce_cache/builder.pkl` already exists** → Skip to "Phase 2: Extract graph data" below.
 
+## IMPORTANT: Use the `hce` CLI for all operations. Do NOT use MCP tools.
+
 ## Phase 1: Install and index
 
 Read `references/quickstart.md` for the full quickstart. The short version:
 
-```bash
-# Install HCE — this skill lives inside the repo at skill/
-# so the repo root is one directory up from the skill directory
-pip install -e "$(dirname "<skill-dir>")" --break-system-packages
+```
+# Install HCE from GitHub (one step, works on any OS)
+pip install git+https://github.com/denson/hypergraph_code_explorer.git
+
+# If the repo is private, use a token:
+# pip install git+https://<GITHUB_TOKEN>@github.com/denson/hypergraph_code_explorer.git
+
+# Verify
+hce --help
 
 # Index a codebase — point at the source root
 hce index ./my-project/src --skip-summaries --verbose
