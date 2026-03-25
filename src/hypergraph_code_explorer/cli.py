@@ -181,6 +181,9 @@ def main():
     blast_p.add_argument("--task", type=str, default="",
         help="Task description for context queries "
              "(e.g. 'introduce CoercionError subclass')")
+    blast_p.add_argument("--hops", type=int, default=2,
+        help="How many hops from tour nodes to include as visible (default: 2). "
+             "Nodes beyond this are collapsed into cluster placeholders.")
     blast_p.add_argument("--output", "-o", type=str, default="blast_analysis",
         help="Output basename (default: blast_analysis)")
     blast_p.add_argument("--cache-dir", type=str, default=None)
@@ -675,8 +678,12 @@ def _run_blast_radius(args):
     # Generate visualization
     result = session.visualize(
         tour_ids=[tour.id], output=args.output,
+        max_neighborhood_hops=args.hops,
     )
-    print(f"  HTML: {result['html']}  ({result['nodes']} nodes, {result['edges']} edges)")
+    node_msg = f"{result['nodes']} nodes, {result['edges']} edges"
+    if result.get("clusters"):
+        node_msg += f", {result['clusters']} clusters ({result['clustered_nodes']} collapsed)"
+    print(f"  HTML: {result['html']}  ({node_msg})")
     if result["md"]:
         print(f"  Report: {result['md']}")
 

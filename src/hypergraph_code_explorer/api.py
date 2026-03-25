@@ -286,6 +286,7 @@ class HypergraphSession:
         tags: list[str] | None = None,
         tour_ids: list[str] | None = None,
         full_graph: bool = False,
+        max_neighborhood_hops: int = 2,
         output: str = "visualization",
         title: str = "",
     ) -> dict:
@@ -295,7 +296,12 @@ class HypergraphSession:
         filtering. Otherwise, selects tours by tag or ID; if no tours match,
         falls back to full-graph mode.
 
-        Returns dict with keys: html, md (or None), tours, nodes, edges.
+        Args:
+            max_neighborhood_hops: How many hops from tour nodes to include
+                as visible (default: 2). Nodes beyond are cluster-collapsed.
+
+        Returns dict with keys: html, md (or None), tours, nodes, edges,
+        clusters, clustered_nodes.
         """
         from .visualization import select_tours, generate_visualization
 
@@ -312,6 +318,7 @@ class HypergraphSession:
         return generate_visualization(
             self._builder, output,
             tours=tours,
+            max_neighborhood_hops=max_neighborhood_hops,
             title=viz_title,
             target_codebase=target_codebase,
         )

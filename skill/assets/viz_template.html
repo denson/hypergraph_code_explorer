@@ -165,6 +165,10 @@ svg { width:100%; height:100%; }
   overflow-x:auto; white-space:pre-wrap; word-break:break-all;
 }
 .detail-hint { color:#445; font-size:0.7rem; text-align:center; padding:20px 0; font-style:italic; }
+/* ── CLUSTER NODES ────────────────────────────────────────────── */
+.cluster-node { cursor:pointer; }
+.cluster-node rect { rx:8; ry:8; }
+.cluster-label { font-size:8px; fill:#8899aa; pointer-events:none; text-anchor:middle; dominant-baseline:central; }
 </style>
 </head>
 <body>
@@ -209,9 +213,20 @@ svg { width:100%; height:100%; }
 // {{CONFIG_INJECTION}} — replaced by generate_viz.py
 
 // ── EXPAND RAW DATA ─────────────────────────────────────────────────
-const nodes = _raw.n.map(n => ({id:n.i, label:n.l, group:n.g, degree:n.d, importance:n.p, language:n.ln||'other'}));
+const nodes = _raw.n.map(n => ({id:n.i, label:n.l, group:n.g, degree:n.d, importance:n.p, language:n.ln||'other', is_cluster:!!n.c, member_count:n.mc||0, full_label:n.fl||'', module_path:n.mp||''}));
 const edges = _raw.e.map(e => ({source:e.s, target:e.t, type:e.y, file:e.f}));
 const isMultiLang = new Set(nodes.map(n=>n.language)).size > 1;
+
+// ── CLUSTER EXPANSION DATA ─────────────────────────────────────────
+const _clusterMembers = _raw.cm || {};
+function expandClusterData(cid) {
+  const cm = _clusterMembers[cid];
+  if (!cm) return null;
+  return {
+    nodes: cm.n.map(n => ({id:n.i, label:n.l, group:n.g, degree:n.d, importance:n.p, language:n.ln||'other', is_cluster:false, member_count:0, full_label:'', module_path:''})),
+    edges: cm.e.map(e => ({source:e.s, target:e.t, type:e.y, file:e.f}))
+  };
+}
 
 // ── LANGUAGE COLORS ─────────────────────────────────────────────────
 const LANG_COLORS = {
@@ -237,8 +252,8 @@ let breathPhase = 0;
 let breathInterval;
 let activeTourIdx = -1;
 let activeStepIdx = -1;
-let simulation, svgEl, g, gLinks, gNodes, gLabels, zoomBehavior;
-let linkSel, nodeSel, labelSel;
+let simulation, svgEl, g, gLinks, gNodes, gLabels, gClusters, zoomBehavior;
+let linkSel, nodeSel, labelSel, clusterSel, clusterLabelSel;
 
 // ── NODE HELPERS ────────────────────────────────────────────────────
 function nodeColor(d) {
@@ -278,15 +293,16 @@ g = svgEl.append('g').attr('id','graph-g');
 zoomBehavior = d3.zoom().scaleExtent([0.05, 8])
   .on('zoom', e => g.attr('transform', e.transform));
 svgEl.call(zoomBehavior);
-gLinks  = g.append('g').attr('class','links');
-gNodes  = g.append('g').attr('class','nodes');
-gLabels = g.append('g').attr('class','labels');
+gLinks    = g.append('g').attr('class','links');
+gNodes    = g.append('g').attr('class','nodes');
+gClusters = g.append('g').attr('class','clusters');
+gLabels   = g.append('g').attr('class','labels');
 
 // ── FORCE SIMULATION ────────────────────────────────────────────────
 simulation = d3.forceSimulation(nodes)
   .force('link', d3.forceLink(edges).id(d=>d.id)
-    .distance(d => d.type==='DEFINES'?35 : d.type==='INHERITS'?55 : 70)
-    .strength(d => d.type==='DEFINES'?0.7 : d.type==='INHERITS'?0.45 : 0.25))
+    .distance(d => d.type==='DEFINES'?35 : d.type==='INHERITS'?55 : d.type==='CLUSTER'?120 : 70)
+    .strength(d => d.type==='DEFINES'?0.7 : d.type==='INHERITS'?0.45 : d.type==='CLUSTER'?0.08 : 0.25))
   .force('charge', d3.forceManyBody().strength(-30).distanceMax(250))
   .force('center', d3.forceCenter(W/2+80, H/2))
   .force('x', d3.forceX(W/2+80).strength(0.015))
@@ -294,13 +310,18 @@ simulation = d3.forceSimulation(nodes)
   .force('collision', d3.forceCollide().radius(d=>nodeRadius(d)+1))
   .on('tick', ticked);
 
+// ── SPLIT REGULAR / CLUSTER NODES ───────────────────────────────────
+const regularNodes = nodes.filter(d => !d.is_cluster);
+const clusterNodes = nodes.filter(d => d.is_cluster);
+
 // ── DRAW ELEMENTS ───────────────────────────────────────────────────
 linkSel = gLinks.selectAll('line').data(edges).join('line')
   .attr('stroke', edgeColor)
-  .attr('stroke-width', d => d.type==='CALLS'?0.8 : d.type==='INHERITS'?1.2 : 0.4)
-  .attr('stroke-opacity', d => d.type==='DEFINES'?0.15 : 0.3);
+  .attr('stroke-width', d => d.type==='CALLS'?0.8 : d.type==='INHERITS'?1.2 : d.type==='CLUSTER'?0.6 : 0.4)
+  .attr('stroke-opacity', d => d.type==='DEFINES'?0.15 : d.type==='CLUSTER'?0.2 : 0.3)
+  .attr('stroke-dasharray', d => d.type==='CLUSTER'?'4,3':null);
 
-nodeSel = gNodes.selectAll('circle').data(nodes).join('circle')
+nodeSel = gNodes.selectAll('circle').data(regularNodes).join('circle')
   .attr('r', nodeRadius)
   .attr('fill', nodeColor)
   .attr('stroke', '#0a0a1a').attr('stroke-width', 0.5)
@@ -308,7 +329,28 @@ nodeSel = gNodes.selectAll('circle').data(nodes).join('circle')
   .attr('fill-opacity', d => d.importance<5?0.4 : 0.9)
   .call(d3.drag().on('start',dragStart).on('drag',dragging).on('end',dragEnd));
 
-labelSel = gLabels.selectAll('text').data(nodes).join('text')
+// Cluster nodes: rounded rectangles with dashed stroke
+function clusterWidth(d) { return Math.min(20 + d.member_count * 0.8, 80); }
+function clusterHeight() { return 22; }
+
+clusterSel = gClusters.selectAll('g.cluster-node').data(clusterNodes, d=>d.id).join(
+  enter => {
+    const cg = enter.append('g').attr('class','cluster-node');
+    cg.append('rect')
+      .attr('width', clusterWidth).attr('height', clusterHeight)
+      .attr('x', d => -clusterWidth(d)/2).attr('y', -11)
+      .attr('rx', 8).attr('ry', 8)
+      .attr('fill', '#1a2233').attr('stroke', '#556677')
+      .attr('stroke-width', 1.2).attr('stroke-dasharray', '4,3')
+      .attr('fill-opacity', 0.7);
+    cg.append('text').attr('class','cluster-label')
+      .text(d => d.label);
+    cg.call(d3.drag().on('start',dragStart).on('drag',dragging).on('end',dragEnd));
+    return cg;
+  }
+);
+
+labelSel = gLabels.selectAll('text').data(regularNodes).join('text')
   .text(d=>d.label)
   .attr('font-size', d => d.importance>=30?'10px' : d.importance>=15?'8px' : d.importance>=5?'6px':'0px')
   .attr('fill', nodeColor)
@@ -321,19 +363,29 @@ labelSel = gLabels.selectAll('text').data(nodes).join('text')
 
 // ── TOOLTIP ─────────────────────────────────────────────────────────
 const tooltip = d3.select('#tooltip');
-nodeSel.on('mouseover', (ev,d) => {
-  const langTag = d.language && d.language !== 'other' ? ` [${d.language}]` : '';
-  tooltip.style('display','block')
-    .html(`<strong>${d.id}</strong>${langTag}<br>Group: ${d.group}<br>Degree: ${d.degree} · Importance: ${d.importance}`);
-}).on('mousemove', ev => {
-  tooltip.style('left',(ev.clientX+12)+'px').style('top',(ev.clientY-10)+'px');
-}).on('mouseout', () => tooltip.style('display','none'));
+function setupTooltip(sel) {
+  sel.on('mouseover', (ev,d) => {
+    if (d.is_cluster) {
+      tooltip.style('display','block')
+        .html(`<strong>${d.full_label || d.label}</strong><br>Click to expand`);
+    } else {
+      const langTag = d.language && d.language !== 'other' ? ` [${d.language}]` : '';
+      tooltip.style('display','block')
+        .html(`<strong>${d.id}</strong>${langTag}<br>Group: ${d.group}<br>Degree: ${d.degree} · Importance: ${d.importance}`);
+    }
+  }).on('mousemove', ev => {
+    tooltip.style('left',(ev.clientX+12)+'px').style('top',(ev.clientY-10)+'px');
+  }).on('mouseout', () => tooltip.style('display','none'));
+}
+setupTooltip(nodeSel);
+setupTooltip(clusterSel);
 
 // ── TICK ────────────────────────────────────────────────────────────
 function ticked() {
   linkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
          .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
   nodeSel.attr('cx',d=>d.x).attr('cy',d=>d.y);
+  clusterSel.attr('transform', d => `translate(${d.x},${d.y})`);
   labelSel.attr('x',d=>d.x).attr('y',d=>d.y);
 }
 
@@ -432,7 +484,11 @@ function activateTour(idx) {
       return 0.01;
     });
 
-  // Zoom to fit tour nodes
+  // Fade cluster nodes during tour
+  clusterSel.select('rect').transition().duration(600).attr('fill-opacity', 0.15).attr('stroke-opacity', 0.2);
+  clusterSel.select('text').transition().duration(600).attr('fill-opacity', 0.15);
+
+  // Zoom to fit tour nodes (exclude clusters)
   zoomToNodes([...tourNodeIds]);
 }
 
@@ -527,7 +583,11 @@ function resetView() {
 
   linkSel.transition().duration(600)
     .attr('stroke', edgeColor)
-    .attr('stroke-opacity', d => d.type==='DEFINES'?0.15:0.3);
+    .attr('stroke-opacity', d => d.type==='DEFINES'?0.15 : d.type==='CLUSTER'?0.2 : 0.3);
+
+  // Restore cluster node opacity
+  clusterSel.select('rect').transition().duration(600).attr('fill-opacity', 0.7).attr('stroke-opacity', 1);
+  clusterSel.select('text').transition().duration(600).attr('fill-opacity', 1);
 
   svgEl.transition().duration(800).call(
     zoomBehavior.transform, d3.zoomIdentity.translate(0,0).scale(1)
@@ -582,7 +642,9 @@ const langCounts = {};
 nodes.forEach(n => { langCounts[n.language] = (langCounts[n.language]||0)+1; });
 const langList = Object.entries(langCounts).sort((a,b)=>b[1]-a[1]);
 const langStr = langList.map(([l,c])=>`${l} (${c})`).join(', ');
-document.getElementById('viz-subtitle').textContent = `${nodes.length} symbols · ${edges.length} edges` + (isMultiLang ? ` · ${langStr}` : '');
+const clusterCount = clusterNodes.length;
+const clusterLabel = clusterCount ? ` · ${clusterCount} clusters` : '';
+document.getElementById('viz-subtitle').textContent = `${regularNodes.length} symbols · ${edges.length} edges${clusterLabel}` + (isMultiLang ? ` · ${langStr}` : '');
 
 // ── LANGUAGE LEGEND ─────────────────────────────────────────────────
 if (isMultiLang) {
@@ -774,6 +836,124 @@ nodeSel.on('click', (ev, d) => {
   ev.stopPropagation();
   openDrawer(d.id);
 });
+
+// ── CLUSTER EXPAND ──────────────────────────────────────────────────
+function expandCluster(clusterNode) {
+  const data = expandClusterData(clusterNode.id);
+  if (!data) return;
+
+  // Remove the cluster node
+  const cidx = nodes.indexOf(clusterNode);
+  if (cidx >= 0) nodes.splice(cidx, 1);
+
+  // Remove cluster edges
+  for (let i = edges.length - 1; i >= 0; i--) {
+    const sid = typeof edges[i].source === 'object' ? edges[i].source.id : edges[i].source;
+    const tid = typeof edges[i].target === 'object' ? edges[i].target.id : edges[i].target;
+    if (sid === clusterNode.id || tid === clusterNode.id) edges.splice(i, 1);
+  }
+
+  // Add member nodes near cluster position, with low importance for faded style
+  const existingIds = new Set(nodes.map(n => n.id));
+  data.nodes.forEach(n => {
+    if (!existingIds.has(n.id)) {
+      n.x = clusterNode.x + (Math.random() - 0.5) * 40;
+      n.y = clusterNode.y + (Math.random() - 0.5) * 40;
+      n.importance = Math.max(n.importance, 2);
+      nodes.push(n);
+    }
+  });
+
+  // Add member edges (avoid duplicates)
+  const edgeKeys = new Set(edges.map(e => {
+    const sid = typeof e.source === 'object' ? e.source.id : e.source;
+    const tid = typeof e.target === 'object' ? e.target.id : e.target;
+    return sid + '|' + tid + '|' + e.type;
+  }));
+  data.edges.forEach(e => {
+    const key = e.source + '|' + e.target + '|' + e.type;
+    if (!edgeKeys.has(key)) {
+      edges.push(e);
+      edgeKeys.add(key);
+    }
+  });
+
+  // Rebuild D3 selections
+  rebuildGraph();
+}
+
+function rebuildGraph() {
+  const rn = nodes.filter(d => !d.is_cluster);
+  const cn = nodes.filter(d => d.is_cluster);
+
+  linkSel = gLinks.selectAll('line').data(edges, d => {
+    const sid = typeof d.source === 'object' ? d.source.id : d.source;
+    const tid = typeof d.target === 'object' ? d.target.id : d.target;
+    return sid + '|' + tid + '|' + d.type;
+  }).join('line')
+    .attr('stroke', edgeColor)
+    .attr('stroke-width', d => d.type==='CALLS'?0.8 : d.type==='INHERITS'?1.2 : d.type==='CLUSTER'?0.6 : 0.4)
+    .attr('stroke-opacity', d => d.type==='DEFINES'?0.15 : d.type==='CLUSTER'?0.2 : 0.3)
+    .attr('stroke-dasharray', d => d.type==='CLUSTER'?'4,3':null);
+
+  nodeSel = gNodes.selectAll('circle').data(rn, d=>d.id).join('circle')
+    .attr('r', nodeRadius)
+    .attr('fill', nodeColor)
+    .attr('stroke', '#0a0a1a').attr('stroke-width', 0.5)
+    .attr('filter', d => d.importance<5?'url(#blur-cloud)' : d.importance>=30?'url(#glow)':null)
+    .attr('fill-opacity', d => d.importance<5?0.4 : 0.9)
+    .call(d3.drag().on('start',dragStart).on('drag',dragging).on('end',dragEnd));
+  setupTooltip(nodeSel);
+  nodeSel.on('click', (ev, d) => { ev.stopPropagation(); openDrawer(d.id); });
+
+  clusterSel = gClusters.selectAll('g.cluster-node').data(cn, d=>d.id).join(
+    enter => {
+      const cg = enter.append('g').attr('class','cluster-node');
+      cg.append('rect')
+        .attr('width', clusterWidth).attr('height', clusterHeight)
+        .attr('x', d => -clusterWidth(d)/2).attr('y', -11)
+        .attr('rx', 8).attr('ry', 8)
+        .attr('fill', '#1a2233').attr('stroke', '#556677')
+        .attr('stroke-width', 1.2).attr('stroke-dasharray', '4,3')
+        .attr('fill-opacity', 0.7);
+      cg.append('text').attr('class','cluster-label').text(d => d.label);
+      cg.call(d3.drag().on('start',dragStart).on('drag',dragging).on('end',dragEnd));
+      return cg;
+    },
+    update => update,
+    exit => exit.remove()
+  );
+  setupTooltip(clusterSel);
+  clusterSel.on('click', (ev, d) => { ev.stopPropagation(); expandCluster(d); });
+
+  labelSel = gLabels.selectAll('text').data(rn, d=>d.id).join('text')
+    .text(d=>d.label)
+    .attr('font-size', d => d.importance>=30?'10px' : d.importance>=15?'8px' : d.importance>=5?'6px':'0px')
+    .attr('fill', nodeColor)
+    .attr('fill-opacity', d => d.importance>=15?0.9 : d.importance>=5?0.5 : 0)
+    .attr('stroke','#0a0a12').attr('stroke-width',3)
+    .attr('stroke-opacity', d => d.importance>=15?0.9 : d.importance>=5?0.5 : 0)
+    .attr('paint-order','stroke')
+    .attr('dx', d => nodeRadius(d)+3).attr('dy','0.35em')
+    .attr('pointer-events','none');
+
+  // Update simulation
+  simulation.nodes(nodes);
+  simulation.force('link', d3.forceLink(edges).id(d=>d.id)
+    .distance(d => d.type==='DEFINES'?35 : d.type==='INHERITS'?55 : d.type==='CLUSTER'?100 : 70)
+    .strength(d => d.type==='DEFINES'?0.7 : d.type==='INHERITS'?0.45 : d.type==='CLUSTER'?0.1 : 0.25));
+  simulation.alpha(0.3).restart();
+
+  // Rebuild detail index
+  Object.keys(detailIndex).forEach(k => delete detailIndex[k]);
+  Object.assign(detailIndex, buildDetailIndex());
+}
+
+clusterSel.on('click', (ev, d) => {
+  ev.stopPropagation();
+  expandCluster(d);
+});
+
 svgEl.on('click', () => {
   if (activeDetailNode) closeDrawer();
 });
