@@ -251,7 +251,20 @@ def _load_builder(cache_dir: str | None):
     """Load a HypergraphBuilder from a cache directory."""
     from .graph.builder import HypergraphBuilder
     resolved = _resolve_cache_dir(cache_dir)
-    return HypergraphBuilder.load(resolved / "builder.pkl")
+    pkl = resolved / "builder.pkl"
+    if not pkl.exists():
+        # Check if there's a .hce_cache in an immediate subdirectory
+        for child in resolved.parent.iterdir():
+            if child.is_dir():
+                candidate = child / ".hce_cache" / "builder.pkl"
+                if candidate.exists():
+                    print(
+                        f"No index found at {resolved}, but found one at {candidate.parent}.\n"
+                        f"Hint: use --cache-dir {candidate.parent} or cd into {child}",
+                        file=sys.stderr,
+                    )
+                    break
+    return HypergraphBuilder.load(pkl)
 
 
 # ---------------------------------------------------------------------------

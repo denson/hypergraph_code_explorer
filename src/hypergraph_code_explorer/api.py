@@ -277,3 +277,48 @@ class HypergraphSession:
         store = self._get_tour_store()
         store.add(tour)
         return tour
+
+    # ---- Visualization ---------------------------------------------------
+
+    def visualize(
+        self,
+        *,
+        tags: list[str] | None = None,
+        tour_ids: list[str] | None = None,
+        full_graph: bool = False,
+        output: str = "visualization",
+        title: str = "",
+    ) -> dict:
+        """Generate D3 HTML visualization, optionally with tour overlays.
+
+        If ``full_graph`` is True, visualizes the entire graph with no tour
+        filtering. Otherwise, selects tours by tag or ID; if no tours match,
+        falls back to full-graph mode.
+
+        Returns dict with keys: html, md (or None), tours, nodes, edges.
+        """
+        from .visualization import select_tours, generate_visualization
+
+        tours = None
+        if not full_graph:
+            store = self._get_tour_store()
+            selected = select_tours(store, tags=tags, tour_ids=tour_ids)
+            if selected:
+                tours = selected
+
+        viz_title = title or "Codebase Architecture"
+        target_codebase = str(self._cache_dir) if self._cache_dir else ""
+
+        return generate_visualization(
+            self._builder, output,
+            tours=tours,
+            title=viz_title,
+            target_codebase=target_codebase,
+        )
+
+    # ---- Persistence ---------------------------------------------------
+
+    def save(self, path: str | Path) -> None:
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+        self._builder.save(path / "builder.pkl")

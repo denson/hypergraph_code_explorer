@@ -392,16 +392,20 @@ def _minify_data(graph_data: dict) -> dict:
 
 
 def _find_template() -> Path:
-    """Locate ``viz_template.html`` relative to the package root."""
-    # Walk upward from this file to find the project root containing skill/
+    """Locate ``viz_template.html`` — check inside the package first, then project root."""
     pkg_dir = Path(__file__).parent
+    # 1. Inside the installed package (pip install)
+    bundled = pkg_dir / "assets" / "viz_template.html"
+    if bundled.exists():
+        return bundled
+    # 2. Project root layout (git clone / editable install)
     for ancestor in [pkg_dir.parent.parent, pkg_dir.parent, pkg_dir]:
         candidate = ancestor / _TEMPLATE_RELPATH
         if candidate.exists():
             return candidate
     raise FileNotFoundError(
-        f"Could not find viz_template.html. Searched relative to {pkg_dir}. "
-        f"Expected at <project_root>/{_TEMPLATE_RELPATH}"
+        f"Could not find viz_template.html. Searched {bundled} and "
+        f"relative to {pkg_dir}. Expected at <project_root>/{_TEMPLATE_RELPATH}"
     )
 
 
