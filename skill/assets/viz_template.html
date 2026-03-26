@@ -190,7 +190,7 @@ svg { width:100%; height:100%; position:relative; z-index:1; }
     <button class="ctrl-btn on" id="btn-live">Live</button>
     <button class="ctrl-btn" id="btn-cb">Colorblind</button>
     <button class="ctrl-btn" id="btn-lang" style="display:none">By Language</button>
-    <button class="ctrl-btn" id="btn-heatmap">Heatmap: Off</button>
+    <button class="ctrl-btn" id="btn-heatmap">Fog: Off</button>
     <button class="ctrl-btn" id="btn-reset">Reset View</button>
   </div>
 </div>
@@ -354,117 +354,6 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener('resize', () => { resizeCanvas(); drawHeatmap(currentTransform); });
 
-// Heatmap color palette: dark blue -> orange -> white
-function heatColor(t) {
-  // t in [0, 1]
-  t = Math.min(1, Math.max(0, t));
-  if (t < 0.33) {
-    const s = t / 0.33;
-    return `rgba(${Math.round(10+30*s)},${Math.round(10+40*s)},${Math.round(60+80*s)},${0.3+0.4*s})`;
-  } else if (t < 0.66) {
-    const s = (t - 0.33) / 0.33;
-    return `rgba(${Math.round(40+180*s)},${Math.round(50+100*s)},${Math.round(140-80*s)},${0.7+0.15*s})`;
-  } else {
-    const s = (t - 0.66) / 0.34;
-    return `rgba(${Math.round(220+35*s)},${Math.round(150+80*s)},${Math.round(60+140*s)},${0.85+0.1*s})`;
-  }
-}
-
-function drawHeatmapDensity(transform) {
-  // Gaussian kernel density estimate on downsampled canvas
-  const cw = canvas.width, ch = canvas.height;
-  const res = 4; // render at 1/4 resolution for performance
-  const gw = Math.ceil(cw / res), gh = Math.ceil(ch / res);
-  const grid = new Float32Array(gw * gh);
-  const bandwidth = 30 * transform.k; // scale bandwidth with zoom
-  const bw2 = bandwidth * bandwidth;
-
-  let maxVal = 0;
-  nodes.forEach(d => {
-    const sx = d.x * transform.k + transform.x;
-    const sy = d.y * transform.k + transform.y;
-    const weight = d.importance || 1;
-    const gx = Math.round(sx / res), gy = Math.round(sy / res);
-    const spread = Math.ceil(bandwidth / res) + 1;
-    for (let dy = -spread; dy <= spread; dy++) {
-      for (let dx = -spread; dx <= spread; dx++) {
-        const px = gx + dx, py = gy + dy;
-        if (px < 0 || px >= gw || py < 0 || py >= gh) continue;
-        const distSq = (dx * res) * (dx * res) + (dy * res) * (dy * res);
-        if (distSq > bw2 * 4) continue;
-        const v = weight * Math.exp(-distSq / (2 * bw2));
-        grid[py * gw + px] += v;
-        if (grid[py * gw + px] > maxVal) maxVal = grid[py * gw + px];
-      }
-    }
-  });
-
-  if (maxVal === 0) return;
-  const imgData = ctx.createImageData(gw, gh);
-  for (let i = 0; i < gw * gh; i++) {
-    const t = grid[i] / maxVal;
-    if (t < 0.01) continue;
-    // Parse color from heatColor
-    let r, g, b, a;
-    if (t < 0.33) {
-      const s = t / 0.33;
-      r = 10+30*s; g = 10+40*s; b = 60+80*s; a = (0.3+0.4*s)*255;
-    } else if (t < 0.66) {
-      const s = (t-0.33)/0.33;
-      r = 40+180*s; g = 50+100*s; b = 140-80*s; a = (0.7+0.15*s)*255;
-    } else {
-      const s = (t-0.66)/0.34;
-      r = 220+35*s; g = 150+80*s; b = 60+140*s; a = (0.85+0.1*s)*255;
-    }
-    const idx = i * 4;
-    imgData.data[idx] = r;
-    imgData.data[idx+1] = g;
-    imgData.data[idx+2] = b;
-    imgData.data[idx+3] = a;
-  }
-  // Draw at low res then scale up
-  const tmpCanvas = document.createElement('canvas');
-  tmpCanvas.width = gw; tmpCanvas.height = gh;
-  tmpCanvas.getContext('2d').putImageData(imgData, 0, 0);
-  ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(tmpCanvas, 0, 0, cw, ch);
-}
-
-function drawHeatmapGrid(transform) {
-  const cw = canvas.width, ch = canvas.height;
-  const gridSize = 40;
-  const cellW = cw / gridSize, cellH = ch / gridSize;
-  const cells = new Float32Array(gridSize * gridSize);
-  let maxVal = 0;
-
-  nodes.forEach(d => {
-    const sx = d.x * transform.k + transform.x;
-    const sy = d.y * transform.k + transform.y;
-    const gx = Math.floor(sx / cellW), gy = Math.floor(sy / cellH);
-    if (gx < 0 || gx >= gridSize || gy < 0 || gy >= gridSize) return;
-    cells[gy * gridSize + gx] += (d.importance || 1);
-    if (cells[gy * gridSize + gx] > maxVal) maxVal = cells[gy * gridSize + gx];
-  });
-
-  if (maxVal === 0) return;
-  for (let gy = 0; gy < gridSize; gy++) {
-    for (let gx = 0; gx < gridSize; gx++) {
-      const val = cells[gy * gridSize + gx];
-      if (val < 0.01) continue;
-      const t = val / maxVal;
-      ctx.fillStyle = heatColor(t);
-      ctx.fillRect(gx * cellW, gy * cellH, cellW, cellH);
-    }
-  }
-  // Subtle grid lines
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= gridSize; i++) {
-    ctx.beginPath(); ctx.moveTo(i * cellW, 0); ctx.lineTo(i * cellW, ch); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, i * cellH); ctx.lineTo(cw, i * cellH); ctx.stroke();
-  }
-}
-
 function drawFogDots(transform) {
   // Original fog-of-war dots for non-focus nodes
   nodes.forEach(d => {
@@ -478,37 +367,19 @@ function drawFogDots(transform) {
   });
 }
 
-function drawModeLabel(mode) {
-  ctx.save();
-  ctx.font = '11px monospace';
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.fillText(mode.toUpperCase(), 8, canvas.height - 8);
-  ctx.restore();
-}
-
 function drawHeatmap(transform) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // True off — hide canvas entirely
   if (heatmapMode === 'off') {
     canvas.style.display = 'none';
     return;
   }
+  // fog mode
   canvas.style.display = 'block';
-
-  if (heatmapMode === 'density') {
-    drawHeatmapDensity(transform);
-    drawModeLabel(heatmapMode);
-  } else if (heatmapMode === 'grid') {
-    drawHeatmapGrid(transform);
-    drawModeLabel(heatmapMode);
-  } else if (heatmapMode === 'fog') {
-    ctx.save();
-    ctx.translate(transform.x, transform.y);
-    ctx.scale(transform.k, transform.k);
-    drawFogDots(transform);
-    ctx.restore();
-  }
+  ctx.save();
+  ctx.translate(transform.x, transform.y);
+  ctx.scale(transform.k, transform.k);
+  drawFogDots(transform);
+  ctx.restore();
 }
 canvas.style.display = 'none';  // Start hidden; drawHeatmap controls visibility
 
@@ -1013,11 +884,8 @@ document.getElementById('btn-lang').onclick = function() {
 };
 
 document.getElementById('btn-heatmap').onclick = function() {
-  const modes = ['off', 'fog', 'density', 'grid'];
-  const labels = ['Heatmap: Off', 'Heatmap: Fog', 'Heatmap: Density', 'Heatmap: Grid'];
-  const idx = (modes.indexOf(heatmapMode) + 1) % modes.length;
-  heatmapMode = modes[idx];
-  this.textContent = labels[idx];
+  heatmapMode = heatmapMode === 'off' ? 'fog' : 'off';
+  this.textContent = heatmapMode === 'off' ? 'Fog: Off' : 'Fog: On';
   this.classList.toggle('on', heatmapMode !== 'off');
   canvas.style.filter = heatmapMode === 'fog' ? 'blur(4px)' : 'none';
   drawHeatmap(currentTransform);
