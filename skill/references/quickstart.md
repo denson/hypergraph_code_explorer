@@ -24,7 +24,36 @@ Verify it worked:
 hce --help
 ```
 
-If `hce` is not found after install, it's in your Python Scripts directory (e.g. `C:\Python311\Scripts\hce.exe`). Run `python -m hypergraph_code_explorer` as a fallback.
+### Troubleshooting: `hce` command not found
+
+If `hce --help` fails with "command not found" or "'hce' is not recognized", the console
+script wasn't added to PATH. This is common on Windows. Diagnose and fix:
+
+```bash
+# Step 1: Check if the script exists somewhere
+# On Windows:
+where hce 2>nul || python -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+# On macOS/Linux:
+which hce 2>/dev/null || python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+
+# Step 2: If the script exists but isn't on PATH, use the module directly:
+python -m hypergraph_code_explorer.cli --help
+
+# Step 3: Create a shell alias for the session:
+# On Windows (PowerShell):
+function hce { python -m hypergraph_code_explorer.cli @args }
+# On Windows (cmd):
+doskey hce=python -m hypergraph_code_explorer.cli $*
+# On macOS/Linux:
+alias hce='python -m hypergraph_code_explorer.cli'
+```
+
+The `python -m hypergraph_code_explorer.cli` fallback is functionally identical to the
+`hce` command. If you use it, substitute it for `hce` in all examples below.
+
+**For the user**: If you want the `hce` command permanently available, add your Python
+Scripts directory to your system PATH. Ask Claude to help you find and set the right path
+for your OS.
 
 Optional extras (append to any install command above):
 ```
@@ -92,15 +121,15 @@ hce query "how does request validation work"
 hce query "what middleware handles CORS"
 ```
 
-### Investigate a question (multi-query analysis)
+### Probe the graph (single structural probe)
 ```bash
-hce analyze "what would break if I changed BaseEstimator.get_params"
-hce analyze "how does random forest handle missing values"
+hce probe "what would break if I changed BaseEstimator.get_params"
+hce probe "how does random forest handle missing values"
 ```
 
-Each `hce analyze` call classifies your question, runs multiple structural queries, and
-builds a memory tour from the results. Tours accumulate across calls — run several to
-build up evidence from different angles.
+Each `hce probe` call classifies your question, runs structural queries, and builds a
+memory tour from the results. A probe is ONE step in an investigation — for full
+investigations, combine probes with targeted `hce lookup` and `hce search` calls.
 
 ### Manage memory tours
 ```bash
@@ -114,36 +143,7 @@ hce tour import investigation.json               # resume a previous investigati
 Tour status values: `active` (shown in visualization), `empty` (no results),
 `weak` (low quality), `hidden` (excluded). Only `active` tours render in the visualization.
 
-Note: `tour annotate`, `tour export`, and `tour import` are planned but may not be
-implemented yet. See TASK_MEMORY_TRACE_WORKFLOW.md for the target API.
+These commands were implemented in commit `7ae22f7`.
 
 ### Codebase overview
-```bash
-hce overview --top 20
-```
-
-All commands accept `--cache-dir <path>` if you're not in the source root, and `--json` for structured output.
-
-## Use as an MCP server
-
-```bash
-pip install -e ".[server]"
-hce server
-```
-
-This exposes five MCP tools: `hce_lookup`, `hce_search`, `hce_query`, `hce_overview`, `hce_stats`.
-
-## Re-indexing
-
-The cache persists across sessions. Re-index only when the codebase changes significantly:
-```bash
-hce index ./fastapi/fastapi --skip-summaries  # overwrites existing cache
-```
-
-For incremental changes, the existing index is still useful — HCE uses file-hash caching to skip unchanged files.
-
-## Limitations
-
-- **Static analysis** — dynamic dispatch, monkey-patching, reflection, and similar runtime tricks aren't captured by tree-sitter's AST parsing.
-- **Structure not semantics** — the graph tells you what calls what, not why. Read the code for business logic.
-- **Language coverage** — 10 languages have full tree-sitter support (Python, JS, TS, Go, Rust, Java, C, C++, Ruby, PHP). Other languages fall back to a regex extractor that captures definitions and imports but misses calls and inheritance.
+```b

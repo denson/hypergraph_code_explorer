@@ -1,12 +1,15 @@
 """
-Analyze Command
-===============
-General-purpose tour-guided codebase analysis.
+Probe Command
+=============
+Single structural probe into the hypergraph.
 
 Takes a plain-English question, decomposes it into multiple HCE queries,
 assembles a tour from the merged results, and generates visualization +
 analysis prompt.  No LLM calls — all classification and query planning
 is rule-based.
+
+A probe is one building block in a multi-query investigation, not a
+complete analysis on its own.
 """
 
 from __future__ import annotations
@@ -61,8 +64,8 @@ STRATEGY_PATTERNS: dict[str, list[str]] = {
 }
 
 
-def classify_analysis(question: str) -> list[str]:
-    """Classify question into analysis strategies.
+def classify_strategy(question: str) -> list[str]:
+    """Classify question into probe strategies.
 
     Returns list of strategy names. If no patterns match, returns
     ``["exploration"]``.
@@ -370,7 +373,7 @@ CONTEXT_TEMPLATES: dict[str, str] = {
 # Tour assembly
 # ---------------------------------------------------------------------------
 
-def build_analysis_tour(
+def build_probe_tour(
     question: str,
     plan: RetrievalPlan,
     strategies: list[str],
@@ -461,7 +464,7 @@ def build_analysis_tour(
         ))
 
     tour_tags = list(strategies) + (tags or [])
-    tour_name = f"Analysis: {question[:80]}"
+    tour_name = f"Probe: {question[:80]}"
 
     summary_parts = [f"Question: {question}"]
     summary_parts.append(f"Strategies: {', '.join(strategies)}")
@@ -500,7 +503,7 @@ def _is_test_path(path: str) -> bool:
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def analyze(
+def probe(
     question: str,
     session: HypergraphSession,
     *,
@@ -509,7 +512,7 @@ def analyze(
     tags: list[str] | None = None,
     strategies: list[str] | None = None,
 ) -> MemoryTour:
-    """Main entry point. Orchestrates classify -> plan -> build -> persist.
+    """Run a single structural probe. Orchestrates classify -> plan -> build -> persist.
 
     Args:
         question: Plain-English question about the codebase.
@@ -523,7 +526,7 @@ def analyze(
         Persisted MemoryTour.
     """
     if not strategies:
-        strategies = classify_analysis(question)
+        strategies = classify_strategy(question)
 
     seed_terms = extract_seed_terms(question)
 
@@ -533,7 +536,7 @@ def analyze(
         # Nothing found — return a minimal tour with a helpful message
         tour = MemoryTour(
             id="",
-            name=f"Analysis: {question[:80]}",
+            name=f"Probe: {question[:80]}",
             summary=f"No results found for: {question}",
             keywords=seed_terms,
             steps=[],
@@ -547,7 +550,7 @@ def analyze(
         store.add(tour)
         return tour
 
-    tour = build_analysis_tour(
+    tour = build_probe_tour(
         question, plan, strategies, seed_terms,
         max_tour_steps=max_tour_steps,
         tags=tags,

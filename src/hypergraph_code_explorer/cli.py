@@ -1,7 +1,7 @@
 """
 CLI Interface
 =============
-Subcommands: index, lookup, search, query, overview, init, embed, stats, tour, analyze, blast-radius, visualize, server.
+Subcommands: index, lookup, search, query, overview, init, embed, stats, tour, probe, blast-radius, visualize, server.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ def main():
         "  - Searching for a string or pattern (use grep)\n"
         "  - Reading a specific file (use cat/read)\n\n"
         "TYPICAL WORKFLOW:\n"
-        "  1. hce analyze 'your question'               (guided tour + visualization)\n"
+        "  1. hce probe 'your question'                  (single structural probe)\n"
         "  2. hce lookup Symbol --callers --depth 2      (targeted reverse lookup)\n"
         "  3. hce blast-radius Symbol --task 'desc'      (impact analysis)\n"
         "  4. Read the specific files identified to understand the dependency",
@@ -205,19 +205,20 @@ def main():
         help="Overwrite existing tours with same ID")
     tour_import_p.add_argument("--cache-dir", type=str, default=None)
 
-    # ---- analyze ----
-    analyze_p = subparsers.add_parser("analyze",
-        help="Analyze a codebase from a plain-English question",
-        description="Analyze a codebase from a plain-English question. "
-            "Decomposes the question into multiple structural queries, "
-            "builds a tour of relevant code, and generates an interactive "
-            "visualization + analysis prompt.\n\n"
+    # ---- probe ----
+    probe_p = subparsers.add_parser("probe",
+        help="Run a single structural probe against the graph",
+        description="Run a single structural probe against the graph. "
+            "Decomposes the question into structural queries, builds a tour "
+            "from the results, and optionally generates a visualization.\n\n"
+            "A probe is ONE step in an investigation — not a complete analysis.\n"
+            "For full investigations, use multiple probes + lookups + searches.\n\n"
             "EXAMPLES:\n"
-            '  hce analyze "how does random forest handle missing values"\n'
-            '  hce analyze "trace the Pipeline.fit execution path"\n'
-            '  hce analyze "what validates input data before fitting"\n'
-            '  hce analyze "exception handling in the forms module"\n'
-            '  hce analyze "what would break if I changed BaseEstimator.get_params"\n\n'
+            '  hce probe "how does random forest handle missing values"\n'
+            '  hce probe "trace the Pipeline.fit execution path"\n'
+            '  hce probe "what validates input data before fitting"\n'
+            '  hce probe "exception handling in the forms module"\n'
+            '  hce probe "what would break if I changed BaseEstimator.get_params"\n\n'
             "STRATEGIES (auto-detected from your question):\n"
             "  blast-radius  -- impact analysis\n"
             "  inheritance   -- class hierarchy\n"
@@ -227,31 +228,31 @@ def main():
             "  cross-cutting -- patterns across codebase\n"
             "  exploration   -- general (default fallback)",
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    analyze_p.add_argument("question", type=str,
+    probe_p.add_argument("question", type=str,
         help="Plain-English question about the codebase")
-    analyze_p.add_argument("--depth", type=int, default=2,
+    probe_p.add_argument("--depth", type=int, default=2,
         help="Traversal depth for structural queries (default: 2)")
-    analyze_p.add_argument("--max-steps", type=int, default=200,
+    probe_p.add_argument("--max-steps", type=int, default=200,
         help="Maximum tour steps (default: 200)")
-    analyze_p.add_argument("--strategy", type=str, default=None,
+    probe_p.add_argument("--strategy", type=str, default=None,
         help="Force a specific strategy instead of auto-detecting. "
              "Comma-separated for multiple: --strategy inheritance,data-flow")
-    analyze_p.add_argument("--hops", type=int, default=0,
+    probe_p.add_argument("--hops", type=int, default=0,
         help="Maximum hops from tour nodes for fog-of-war (default: 0 = unlimited)")
-    analyze_p.add_argument("--max-svg", type=int, default=500,
+    probe_p.add_argument("--max-svg", type=int, default=500,
         help="Max SVG nodes in browser focus window (default: 500)")
-    analyze_p.add_argument("--output", "-o", type=str, default="analysis",
-        help="Output basename (default: analysis)")
-    analyze_p.add_argument("--status", choices=["active", "empty", "weak", "hidden"],
+    probe_p.add_argument("--output", "-o", type=str, default="probe",
+        help="Output basename (default: probe)")
+    probe_p.add_argument("--status", choices=["active", "empty", "weak", "hidden"],
         default=None, help="Override auto-detected tour status")
-    analyze_p.add_argument("--clear", action="store_true",
-        help="Clear all existing tours before running this analysis")
-    analyze_p.add_argument("--follows", type=str, default=None,
+    probe_p.add_argument("--clear", action="store_true",
+        help="Clear all existing tours before running this probe")
+    probe_p.add_argument("--follows", type=str, default=None,
         help="Tour ID this query follows up on (links related investigations)")
-    analyze_p.add_argument("--no-viz", action="store_true",
+    probe_p.add_argument("--no-viz", action="store_true",
         help="Skip visualization generation")
-    analyze_p.add_argument("--cache-dir", type=str, default=None)
-    analyze_p.add_argument("--verbose", "-v", action="store_true")
+    probe_p.add_argument("--cache-dir", type=str, default=None)
+    probe_p.add_argument("--verbose", "-v", action="store_true")
 
     # ---- blast-radius ----
     blast_p = subparsers.add_parser("blast-radius",
@@ -308,7 +309,7 @@ def main():
         "embed": _run_embed,
         "stats": _run_stats,
         "tour": _run_tour,
-        "analyze": _run_analyze,
+        "probe": _run_probe,
         "blast-radius": _run_blast_radius,
         "visualize": _run_visualize,
         "server": _run_server,
@@ -809,7 +810,7 @@ def _run_tour(args):
         print(f"Imported {imported} tours, skipped {skipped} duplicates")
 
 
-def _run_analyze(args):
+def _run_probe(args):
     from .api import HypergraphSession
     from .memory_tours import MemoryTourStore, generate_analysis_prompt
 
@@ -826,7 +827,7 @@ def _run_analyze(args):
     if args.strategy:
         strategies = [s.strip() for s in args.strategy.split(",")]
 
-    tour = session.analyze(
+    tour = session.probe(
         args.question,
         depth=args.depth,
         max_tour_steps=args.max_steps,

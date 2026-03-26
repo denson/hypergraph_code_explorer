@@ -65,8 +65,12 @@ pip install git+https://github.com/denson/hypergraph_code_explorer.git
 # If the repo is private, use a token:
 # pip install git+https://<GITHUB_TOKEN>@github.com/denson/hypergraph_code_explorer.git
 
-# Verify
+# Verify — IMPORTANT: test this before proceeding
 hce --help
+
+# If "hce" is not found, use the module fallback (functionally identical):
+python -m hypergraph_code_explorer.cli --help
+# See references/quickstart.md "Troubleshooting" section for full diagnosis and fixes.
 
 # Index a codebase — point at the source root
 hce index ./my-project/src --skip-summaries --verbose
@@ -265,46 +269,4 @@ The bundled template handles all the visualization mechanics. You don't need to 
 - **Click-to-spotlight** — clicking a narrative step zooms to the target node, enlarges it, dims everything else, shows a pulsing ring
 - **Live breathing** — sinusoidal wobble keeps the graph alive; Freeze/Live toggle
 - **Dual palettes** — default vibrant + colorblind-safe, toggled via button
-- **Language mode** — for multi-language codebases, a "By Language" toggle colors nodes by source language (auto-hidden for single-language projects). Language legend shown in sidebar
-- **Symbol search** — type-to-filter search box that highlights matching nodes
-- **Keyboard navigation** — arrow keys step through tour narratives, Escape resets
-- **Tooltip** — hover any node to see its full ID, group, language, degree, and importance
-
-### Performance notes
-
-- 900+ nodes / 1600+ edges renders smoothly
-- The template uses a single `<g>` container with zoom applied once (never per-element transforms)
-- For graphs > 3000 nodes, SVG blur filters may get expensive — consider customizing the template to disable cloud blur
-
-## Investigation mode
-
-If the user is asking questions about a codebase rather than requesting a visualization,
-switch to the investigation workflow described in `references/investigator.md`. That document
-covers the full methodology: how to decompose questions into targeted HCE queries, how to
-evaluate and filter results, how to accumulate memory tours across multiple queries, and how
-to synthesize findings into an evidence-backed answer.
-
-Key differences from the visualization workflow:
-- You run multiple targeted queries (not one big extraction)
-- Each query produces a memory tour that accumulates in `memory_tours.json`
-- You evaluate results after each query and filter noise before continuing
-- The visualization renders all active tours at the end (not a full-graph overview)
-- The primary deliverable is an answer with evidence, not a visualization
-
-The visualization is still produced — it becomes a navigable evidence board showing all
-the tours that support your answer. But the answer comes first.
-
-## Phase 5: Save and present
-
-Save the HTML to the user's workspace folder and provide a link. The visualization is fully self-contained — no server needed, works when opened directly from the filesystem.
-
-## Adapting for different codebases
-
-The things that change per codebase:
-1. **Group definitions** — prefix-to-group mapping
-2. **Color palette** — assign colors meaningfully (warm for "hot" paths, cool for infrastructure)
-3. **Tours** — require understanding the codebase architecture; spend effort here
-4. **Force parameters** — larger graphs may need weaker charge and longer distances
-5. **Language mix** — for single-language projects, the language toggle is auto-hidden. For mixed-language projects, consider designing a "Cross-Language Boundaries" tour that highlights nodes where one language calls into another (e.g., a Python CLI invoking a Rust FFI module, or JS frontend calling a Go API)
-
-The extraction script and HTML architecture stay the same across codebases.
+- **Language mode** — for 

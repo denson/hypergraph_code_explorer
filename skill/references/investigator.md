@@ -23,6 +23,54 @@ The goal is **understanding**, not coverage. A 10-step tour with 10 relevant nod
 
 ---
 
+## CRITICAL: Do NOT shortcut with `hce probe`
+
+`hce probe` is a single-query tool — it takes one question, picks one strategy, and returns
+one tour. It is the equivalent of running one Google search and writing a research paper
+from it. **Never run a single `hce probe` and consider the investigation done.**
+
+Your job as the investigator is to:
+1. Decompose the question into targeted sub-queries
+2. Run multiple `hce lookup`, `hce search`, and optionally `hce probe` commands
+3. Evaluate results between each query — check for noise, missing coverage, dead ends
+4. Chain follow-up queries based on what you found
+5. Synthesize the accumulated evidence into an answer
+
+`hce probe` is useful as ONE step in this process — for example, to get an initial
+exploration of a broad topic. But the real value comes from the targeted follow-ups
+you do after evaluating the probe results.
+
+### Good investigation sequence (example)
+
+    # User asks: "How do random forests work in scikit-learn?"
+
+    # Step 1: Find the key symbol directly
+    hce lookup RandomForestClassifier --calls --depth 2
+
+    # Step 2: Trace the inheritance chain
+    hce lookup RandomForestClassifier --inherits
+
+    # Step 3: What does fit() actually call?
+    hce lookup RandomForestClassifier.fit --calls --depth 2
+
+    # Step 4: Find the tree-building machinery
+    hce search "BaseForest"
+    hce lookup BaseForest.fit --calls
+
+    # Step 5: Optionally probe for broader context
+    hce probe "random forest ensemble methods"
+
+    # Step 6: Annotate weak results, keep strong ones
+    hce tour annotate <tour-id> --status weak --finding "noise from text matching"
+
+### Bad investigation (what NOT to do)
+
+    # DON'T: Run one probe and call it done
+    hce probe "How do random forests work in scikit-learn?"
+    # This splits into "random" + "forest" + "scikit" + "learn" and matches garbage
+
+---
+
 ## CONTEXT
 
 **Environment**: You are Claude Code running in a terminal with access to the filesystem and the `hce` CLI tool. The codebase has already been indexed (`hce index` was run, `.hce_cache/builder.pkl` exists).
@@ -32,7 +80,7 @@ The goal is **understanding**, not coverage. A 10-step tour with 10 relevant nod
 **Available HCE commands**:
 - `hce search <term>` — text search across all symbol names. Fast. Returns matching nodes.
 - `hce lookup <symbol> [--callers] [--calls] [--inherits] [--raises] [--depth N]` — exact structural lookup. Returns edges and connected nodes.
-- `hce analyze "<question>"` — rule-based query planner. Classifies question, runs multiple lookups, builds a tour. Useful as a starting point but often noisy — treat its output as a first draft, not a final answer.
+- `hce probe "<question>"` — rule-based single-query probe. Classifies question, runs multiple lookups, builds a tour. Useful as a starting point but often noisy — treat its output as a first draft, not a final answer.
 - `hce stats` — graph statistics and hub nodes.
 - `hce tour list` — list all memory tours.
 - `hce tour annotate <id> --finding "<text>" --status <active|empty|weak|hidden>` — annotate a tour with your interpretation.
@@ -58,7 +106,7 @@ You MAY:
 
 ## CONSTRAINTS
 
-1. **Do not run `hce analyze` blindly and report the results.** The rule-based planner produces noisy output. Always review what it found and filter or follow up.
+1. **Do not run `hce probe` blindly and report the results.** The rule-based planner produces noisy output. Always review what it found and filter or follow up.
 2. **Do not trust text-match results without verification.** If a tour step says `[text match]`, the node was found by string matching, not structural edges. It may be noise.
 3. **Do not present noise to the user.** If a query returns irrelevant results (e.g., `.values()` dict calls when searching for "missing values"), mark the tour as `weak` and run a better query.
 4. **Do not skip reading code.** HCE tells you *what is connected*. Reading code tells you *why and how*. You must read key files to produce a real answer.
@@ -110,7 +158,7 @@ hce search "values"    # matches .values() on every dict in the codebase — pur
 - Search for compound symbols first (`check_is_fitted`, not `check` + `fitted`)
 - Use `hce lookup` with edge type flags for structural queries (inheritance? use `--inherits`. callers? use `--callers`)
 - Use `hce search` for discovery when you don't know the exact symbol name
-- Use `hce analyze` as a quick first pass — but always review and follow up
+- Use `hce probe` as a quick first pass — but always review and follow up
 
 ### Phase 3: Evaluate Results
 

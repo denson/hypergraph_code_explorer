@@ -32,21 +32,21 @@ For deeper queries, use the CLI (available as `hce` in this project):
   hce query "natural language"     # full dispatch query
   hce overview                     # module summary + hub nodes
 
-### Analyze — Tour-Guided Codebase Analysis
-  hce analyze "your question here"
+### Probe — Single Structural Probe
+  hce probe "your question here"
 
-  Use `analyze` when you need to **understand** a part of the codebase,
-  not just find a symbol. It decomposes your question into multiple
-  structural queries, builds a guided tour of relevant code, and
-  generates an interactive visualization.
+  Use `probe` to run a single structural query against the graph. It
+  decomposes your question into structural queries, builds a guided
+  tour of relevant code, and optionally generates a visualization.
+  A probe is ONE step in an investigation — not a complete analysis.
 
   Examples — be specific and descriptive for best results:
-    hce analyze "how does authentication middleware validate tokens"
-    hce analyze "trace the request lifecycle from Router to Response"
-    hce analyze "what would break if I changed BaseModel.validate"
-    hce analyze "exception handling patterns in the payment module"
-    hce analyze "all places that validate user input before database writes"
-    hce analyze "how does the caching layer interact with the ORM"
+    hce probe "how does authentication middleware validate tokens"
+    hce probe "trace the request lifecycle from Router to Response"
+    hce probe "what would break if I changed BaseModel.validate"
+    hce probe "exception handling patterns in the payment module"
+    hce probe "all places that validate user input before database writes"
+    hce probe "how does the caching layer interact with the ORM"
 
   Strategies (auto-detected from your question):
     blast-radius   — impact of changing a symbol (who depends on it?)
@@ -70,14 +70,14 @@ For deeper queries, use the CLI (available as `hce` in this project):
 ### Blast Radius — Single-Symbol Impact Analysis
   hce blast-radius <symbol> --depth 2 --task "description"
 
-  Specialized version of analyze for impact analysis of a specific symbol.
+  Specialized version of probe for impact analysis of a specific symbol.
   Use when you know exactly which symbol you're changing.
 
 ### Investigation Workflow
-  Build up evidence with multiple analyze calls — tours accumulate:
-    hce analyze "what classes inherit from SelectorMixin"
-    hce analyze "how does SelectKBest.fit work"
-    hce analyze "what calls _get_support_mask"
+  Build up evidence with multiple probe calls — tours accumulate:
+    hce probe "what classes inherit from SelectorMixin"
+    hce probe "how does SelectKBest.fit work"
+    hce probe "what calls _get_support_mask"
 
   Mark weak/empty results so they don't clutter the visualization:
     hce tour annotate <tour-id> --status weak --finding "Only 2 steps, not useful"
@@ -90,7 +90,7 @@ For deeper queries, use the CLI (available as `hce` in this project):
     hce tour import my_investigation.json
 
   Start fresh:
-    hce analyze "new question" --clear
+    hce probe "new question" --clear
 
   Tour status values:
     active  — good results, shown in visualization (default)
@@ -116,16 +116,16 @@ Read `.hce/CODEBASE_MAP.md` for a structural overview.
 
 When investigating code relationships, use the terminal:
 
-  hce analyze "your question"      # tour-guided analysis + visualization
+  hce probe "your question"      # single structural probe
   hce lookup <symbol> --callers    # reverse call graph
   hce lookup <symbol> --inherits   # class hierarchy
   hce search <term>                # find symbols by name
   hce query "question"             # natural language query
   hce blast-radius <symbol>        # impact analysis
 
-Investigation workflow — tours accumulate across multiple analyze calls:
-  hce analyze "what inherits from X"    # first query
-  hce analyze "what calls Y"            # accumulates
+Investigation workflow — tours accumulate across multiple probe calls:
+  hce probe "what inherits from X"    # first query
+  hce probe "what calls Y"            # accumulates
   hce tour annotate <id> --status weak  # mark weak results
   hce tour export --all -o results.json # save for later
   hce tour import results.json          # resume
@@ -144,20 +144,20 @@ Read it for an overview of modules, key symbols, and relationships.
 
 Use the `hce` CLI for structural queries:
 
-  hce analyze "your question"             # tour-guided analysis + viz
+  hce probe "your question"             # single structural probe
   hce lookup <symbol> --callers --depth 2  # reverse dependencies
   hce search <term>                        # find symbols by name
   hce query "natural language question"    # dispatch query
   hce blast-radius <symbol>                # impact analysis
   hce overview                             # module summary
 
-Investigation workflow — tours accumulate across analyze calls:
-  hce analyze "query 1"                   # first tour
-  hce analyze "query 2"                   # accumulates
+Investigation workflow — tours accumulate across probe calls:
+  hce probe "query 1"                   # first tour
+  hce probe "query 2"                   # accumulates
   hce tour annotate <id> --status weak    # mark weak results
   hce tour export --all -o results.json   # save
   hce tour import results.json            # resume
-  hce analyze "query" --clear             # start fresh
+  hce probe "query" --clear             # start fresh
 
 Output is human-readable by default. Add --json for structured output.
 Returns file paths, related symbols, and grep patterns."""

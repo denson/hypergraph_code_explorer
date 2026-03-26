@@ -279,9 +279,9 @@ class HypergraphSession:
         store.save()
         return {"imported": imported, "skipped": skipped}
 
-    # ---- Analyze (general-purpose tour-guided analysis) --------------------
+    # ---- Probe (single structural probe into the graph) --------------------
 
-    def analyze(
+    def probe(
         self,
         question: str,
         *,
@@ -290,20 +290,26 @@ class HypergraphSession:
         tags: list[str] | None = None,
         strategies: list[str] | None = None,
     ) -> MemoryTour:
-        """General-purpose tour-guided analysis from a plain-English question.
+        """Run a single structural probe from a plain-English question.
 
         Unlike blast_radius() which is anchored to a single symbol's BFS
-        neighborhood, analyze() decomposes the question into multiple queries,
+        neighborhood, probe() decomposes the question into multiple queries,
         merges the results, and builds a tour covering all relevant code.
+
+        A probe is one building block in a multi-query investigation — not
+        a complete analysis on its own.
         """
-        from .analyze import analyze as run_analyze
-        return run_analyze(
+        from .probe import probe as run_probe
+        return run_probe(
             question, self,
             depth=depth,
             max_tour_steps=max_tour_steps,
             tags=tags,
             strategies=strategies,
         )
+
+    # Deprecated alias
+    analyze = probe
 
     # ---- Blast radius analysis -------------------------------------------
 
