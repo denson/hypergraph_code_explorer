@@ -209,116 +209,25 @@ def _get_hub_nodes(builder: HypergraphBuilder, top: int = 20) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Pre-computed layout
+# Pre-computed layout (delegates to layout.py)
 # ---------------------------------------------------------------------------
 
-import math
-import random as _random
-
-_LAYOUT_RNG = _random.Random(42)
+from .layout import compute_layout
 
 
 def _precompute_layout(
     nodes: list[dict],
     edges: list[dict],
 ) -> None:
-    """Assign x,y positions to nodes in-place.
-
-    For small graphs (<=2000 nodes): use NetworkX spring_layout.
-    For large graphs: module-based circle arrangement + spring refinement.
-    Positions are deterministic (seeded RNG).
-    """
+    """Assign x,y positions to nodes in-place using numpy force simulation."""
     if not nodes:
         return
 
-    if len(nodes) <= 2000:
-        _layout_spring(nodes, edges)
-    else:
-        _layout_modular(nodes, edges)
-
-
-def _layout_spring(nodes: list[dict], edges: list[dict]) -> None:
-    """Use NetworkX spring_layout for small graphs."""
-    import networkx as nx
-
-    G = nx.Graph()
+    positions = compute_layout(nodes, edges)
     for n in nodes:
-        G.add_node(n["id"])
-    for e in edges:
-        G.add_edge(e["source"], e["target"])
-
-    pos = nx.spring_layout(G, k=1.5, iterations=100, seed=42, scale=500)
-    for n in nodes:
-        x, y = pos.get(n["id"], (0, 0))
-        n["x"] = round(float(x), 1)
-        n["y"] = round(float(y), 1)
-
-
-def _layout_modular(nodes: list[dict], edges: list[dict]) -> None:
-    """Module-based circle layout for large graphs.
-
-    1. Arrange module centroids in a circle.
-    2. Scatter nodes within each module's region.
-    3. Apply spring iterations to pull connected nodes closer.
-    """
-    rng = _LAYOUT_RNG
-    rng.seed(42)
-
-    # Group nodes by module
-    groups: dict[str, list[dict]] = defaultdict(list)
-    for n in nodes:
-        groups[n["group"]].append(n)
-
-    # Arrange modules in a circle, larger modules get more space
-    module_list = sorted(groups.keys())
-    n_modules = max(len(module_list), 1)
-    base_radius = 400 + n_modules * 25
-
-    module_pos: dict[str, tuple[float, float]] = {}
-    for i, mod in enumerate(module_list):
-        angle = 2 * math.pi * i / n_modules
-        module_pos[mod] = (
-            base_radius * math.cos(angle),
-            base_radius * math.sin(angle),
-        )
-
-    # Scatter nodes within module region
-    for mod, mod_nodes in groups.items():
-        mx, my = module_pos.get(mod, (0.0, 0.0))
-        spread = max(40, min(120, len(mod_nodes) * 0.5))
-        for n in mod_nodes:
-            n["x"] = round(mx + rng.gauss(0, spread), 1)
-            n["y"] = round(my + rng.gauss(0, spread), 1)
-
-    # Spring iterations to pull connected nodes together
-    _spring_iterations(nodes, edges, iterations=50)
-
-
-def _spring_iterations(
-    nodes: list[dict],
-    edges: list[dict],
-    iterations: int = 50,
-    k: float = 0.008,
-) -> None:
-    """Apply spring forces between connected nodes to refine layout."""
-    node_idx = {n["id"]: n for n in nodes}
-
-    for _ in range(iterations):
-        for e in edges:
-            src = node_idx.get(e["source"])
-            tgt = node_idx.get(e["target"])
-            if not src or not tgt:
-                continue
-            dx = tgt["x"] - src["x"]
-            dy = tgt["y"] - src["y"]
-            dist = math.sqrt(dx * dx + dy * dy) + 0.01
-            # Attractive force
-            fx = k * dx
-            fy = k * dy
-            src["x"] = round(src["x"] + fx, 1)
-            src["y"] = round(src["y"] + fy, 1)
-            tgt["x"] = round(tgt["x"] - fx, 1)
-            tgt["y"] = round(tgt["y"] - fy, 1)
+        pos = positions.get(n["id"], {"x": 0.0, "y": 0.0})
+        n["x"] = pos["x"]
+        n["y"] = pos["y"]
 
 
 # Edge type enum for compact edge encoding
