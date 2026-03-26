@@ -356,11 +356,131 @@ def scaffold_prompt(
 # Analysis prompt: convert a tour into a Stage 2 analysis work order
 # ---------------------------------------------------------------------------
 
+PROMPT_PREAMBLES: dict[str, str] = {
+    "blast-radius": (
+        "You are performing a blast-radius / impact analysis. Walk through the "
+        "following tour step by step. At each step, read the indicated file, "
+        "assess how this code depends on or is affected by the target symbol, "
+        "and build on your findings from previous steps."
+    ),
+    "inheritance": (
+        "You are mapping a class inheritance hierarchy. Walk through the "
+        "following tour step by step. At each step, read the indicated file, "
+        "identify what the class inherits, what it overrides, and how its "
+        "behavior specializes or extends its parent classes."
+    ),
+    "data-flow": (
+        "You are tracing data flow through the codebase. Walk through the "
+        "following tour step by step. At each step, read the indicated file, "
+        "identify what data enters this function, how it is transformed, and "
+        "where it flows next."
+    ),
+    "exception-flow": (
+        "You are analyzing exception and error handling patterns. Walk through "
+        "the following tour step by step. At each step, read the indicated file, "
+        "identify what exceptions are raised, caught, or propagated, and how "
+        "error conditions are handled."
+    ),
+    "api-surface": (
+        "You are mapping the public API surface. Walk through the following "
+        "tour step by step. At each step, read the indicated file, identify "
+        "what is publicly exported, what contracts it exposes, and how it "
+        "relates to the overall module interface."
+    ),
+    "cross-cutting": (
+        "You are finding all usages of a pattern across the codebase. Walk "
+        "through the following tour step by step. At each step, read the "
+        "indicated file, identify how this location uses the pattern, and "
+        "whether the usage is consistent with other locations."
+    ),
+    "exploration": (
+        "You are exploring the codebase to answer a question. Walk through "
+        "the following tour step by step. At each step, read the indicated "
+        "file, gather evidence relevant to the question, and build on your "
+        "findings from previous steps."
+    ),
+}
+
+PROMPT_OUTPUT_FORMATS: dict[str, str] = {
+    "blast-radius": (
+        "## Output format\n"
+        "For each step, provide:\n"
+        "1. What the code does at this location (with file:line references)\n"
+        "2. Answer to the context query\n"
+        "3. Risk assessment (high/medium/low) with justification\n"
+        "4. Any connections to findings from previous steps\n\n"
+        "After all steps, provide a summary of the complete blast radius — "
+        "what would break, what might break, and what is safe."
+    ),
+    "inheritance": (
+        "## Output format\n"
+        "For each step, provide:\n"
+        "1. What this class inherits from and what it overrides (with file:line references)\n"
+        "2. How its behavior specializes or extends the parent\n"
+        "3. Any mixins or multiple inheritance patterns\n"
+        "4. Connections to findings from previous steps\n\n"
+        "After all steps, provide a summary of the complete inheritance tree — "
+        "the root classes, key branches, override patterns, and any diamond inheritance issues."
+    ),
+    "data-flow": (
+        "## Output format\n"
+        "For each step, provide:\n"
+        "1. What data enters and exits this function (with file:line references)\n"
+        "2. What transformations or validations are applied\n"
+        "3. Where the data flows next\n"
+        "4. Connections to findings from previous steps\n\n"
+        "After all steps, provide a summary of the complete data flow path — "
+        "entry points, transformations, validation checkpoints, and final destinations."
+    ),
+    "exception-flow": (
+        "## Output format\n"
+        "For each step, provide:\n"
+        "1. What exceptions are raised, caught, or propagated (with file:line references)\n"
+        "2. What error conditions trigger them\n"
+        "3. How errors are recovered from or surfaced to the caller\n"
+        "4. Connections to findings from previous steps\n\n"
+        "After all steps, provide a summary of the exception handling architecture — "
+        "which layers raise, which catch, which propagate, and any gaps in error handling."
+    ),
+    "api-surface": (
+        "## Output format\n"
+        "For each step, provide:\n"
+        "1. What is publicly exported (with file:line references)\n"
+        "2. What contract or interface it exposes\n"
+        "3. Whether it is documented and stable\n"
+        "4. Connections to findings from previous steps\n\n"
+        "After all steps, provide a summary of the public API surface — "
+        "key entry points, stability guarantees, and any undocumented public symbols."
+    ),
+    "cross-cutting": (
+        "## Output format\n"
+        "For each step, provide:\n"
+        "1. How this location uses the pattern (with file:line references)\n"
+        "2. Whether the usage is consistent with other locations\n"
+        "3. Any deviations or edge cases\n"
+        "4. Connections to findings from previous steps\n\n"
+        "After all steps, provide a summary of the pattern usage — "
+        "how many locations, how consistent, and any outliers or violations."
+    ),
+    "exploration": (
+        "## Output format\n"
+        "For each step, provide:\n"
+        "1. What the code does at this location (with file:line references)\n"
+        "2. How it relates to the question\n"
+        "3. Key insights or surprising findings\n"
+        "4. Connections to findings from previous steps\n\n"
+        "After all steps, provide a comprehensive answer to the original question, "
+        "citing the evidence gathered from each step."
+    ),
+}
+
+
 def generate_analysis_prompt(
     tour: MemoryTour,
     *,
     task_description: str = "",
     output_format: str = "markdown",
+    strategy: str = "",
 ) -> str:
     """Convert a memory tour into a structured analysis prompt.
 
@@ -368,13 +488,17 @@ def generate_analysis_prompt(
     prompt instructs an LLM to walk through the tour step by step, answering
     each step's context_query with evidence from the code.
     """
+    if not strategy:
+        known = set(PROMPT_PREAMBLES.keys())
+        for tag in tour.tags:
+            if tag in known:
+                strategy = tag
+                break
+        if not strategy:
+            strategy = "exploration"
+
     lines: list[str] = []
-    lines.append(
-        "You are performing a blast radius analysis. Walk through the following "
-        "tour step by step. At each step, read the indicated file, answer the "
-        "context query with evidence (file:line, code snippets, risk assessment), "
-        "and build on your findings from previous steps."
-    )
+    lines.append(PROMPT_PREAMBLES.get(strategy, PROMPT_PREAMBLES["exploration"]))
     lines.append("")
 
     if task_description:
@@ -397,14 +521,6 @@ def generate_analysis_prompt(
         lines.append("[Answer this question with evidence before moving to the next step.]")
         lines.append("")
 
-    lines.append("## Output format")
-    lines.append("For each step, provide:")
-    lines.append("1. What the code does at this location (with file:line references)")
-    lines.append("2. Answer to the context query")
-    lines.append("3. Risk assessment (high/medium/low) with justification")
-    lines.append("4. Any connections to findings from previous steps")
-    lines.append("")
-    lines.append("After all steps, provide a summary of the complete blast radius."
-    )
+    lines.append(PROMPT_OUTPUT_FORMATS.get(strategy, PROMPT_OUTPUT_FORMATS["exploration"]))
 
     return "\n".join(lines)

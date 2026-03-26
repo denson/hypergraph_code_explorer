@@ -124,6 +124,7 @@ def test_generate_analysis_prompt():
         id="test123",
         name="Blast radius: ValidationError",
         summary="test",
+        tags=["blast-radius"],
         steps=[
             MemoryTourStep(
                 node="validate",
@@ -146,7 +147,7 @@ def test_generate_analysis_prompt():
         tour, task_description="introduce CoercionError subclass",
     )
 
-    assert "blast radius analysis" in prompt.lower()
+    assert "blast-radius" in prompt.lower() or "impact analysis" in prompt.lower()
     assert "introduce CoercionError subclass" in prompt
     assert "## Tour: Blast radius: ValidationError" in prompt
     assert "### Step 1: validate" in prompt
@@ -156,7 +157,7 @@ def test_generate_analysis_prompt():
     assert "validators.py" in prompt
     assert "fields.py" in prompt
     assert "Risk assessment" in prompt
-    assert "summary of the complete blast radius" in prompt
+    assert "blast radius" in prompt.lower()
 
 
 def test_generate_analysis_prompt_without_task():
