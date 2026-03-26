@@ -901,50 +901,47 @@ function resetView() {
 
 // ── SEARCH ──────────────────────────────────────────────────────────
 const searchBox = document.getElementById('search-box');
-let searchTimeout;
-searchBox.addEventListener('input', () => {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    const q = searchBox.value.trim().toLowerCase();
-    if (!q) { if(activeTourIdx>=0) activateTour(activeTourIdx); else resetView(); return; }
-    const matches = new Set();
-    nodes.forEach(d => { if(d.id.toLowerCase().includes(q)||d.label.toLowerCase().includes(q)) matches.add(d.id); });
-    const connected = getConnectedNodes(matches);
+searchBox.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter') return;
+  const q = searchBox.value.trim().toLowerCase();
+  if (!q) { if(activeTourIdx>=0) activateTour(activeTourIdx); else resetView(); return; }
+  const matches = new Set();
+  nodes.forEach(d => { if(d.id.toLowerCase().includes(q)||d.label.toLowerCase().includes(q)) matches.add(d.id); });
+  const connected = getConnectedNodes(matches);
 
-    // Expand focus window to include matches + their neighbors
-    if (!smallGraph && matches.size > 0) {
-      focusWindow.clear();
-      matches.forEach(id => focusWindow.add(id));
-      connected.forEach(id => focusWindow.add(id));
-      tourNodeIds.forEach(id => focusWindow.add(id));
-      // Assign focus hops for search
-      nodes.forEach(d => {
-        if (matches.has(d.id)) d._focusHop = 0;
-        else if (connected.has(d.id)) d._focusHop = 1;
-        else d._focusHop = 99;
-      });
-      rebuildFocusView();
-    }
+  // Expand focus window to include matches + their neighbors
+  if (!smallGraph && matches.size > 0) {
+    focusWindow.clear();
+    matches.forEach(id => focusWindow.add(id));
+    connected.forEach(id => focusWindow.add(id));
+    tourNodeIds.forEach(id => focusWindow.add(id));
+    // Assign focus hops for search
+    nodes.forEach(d => {
+      if (matches.has(d.id)) d._focusHop = 0;
+      else if (connected.has(d.id)) d._focusHop = 1;
+      else d._focusHop = 99;
+    });
+    rebuildFocusView();
+  }
 
-    nodeSel.transition().duration(400)
-      .attr('fill-opacity', d => matches.has(d.id)?1 : connected.has(d.id)?0.2 : 0.03)
-      .attr('r', d => matches.has(d.id)?nodeRadius(d)*1.5:nodeRadius(d))
-      .attr('filter', d => matches.has(d.id)?'url(#glow)':null);
+  nodeSel.transition().duration(400)
+    .attr('fill-opacity', d => matches.has(d.id)?1 : connected.has(d.id)?0.2 : 0.03)
+    .attr('r', d => matches.has(d.id)?nodeRadius(d)*1.5:nodeRadius(d))
+    .attr('filter', d => matches.has(d.id)?'url(#glow)':null);
 
-    setLabelOpacity(labelSel, 400, d => matches.has(d.id)?1 : 0);
-    labelSel.transition().duration(400)
-      .attr('font-size', d => matches.has(d.id)?'10px':'0px');
+  setLabelOpacity(labelSel, 400, d => matches.has(d.id)?1 : 0);
+  labelSel.transition().duration(400)
+    .attr('font-size', d => matches.has(d.id)?'10px':'0px');
 
-    linkSel.transition().duration(400)
-      .attr('stroke-opacity', d => {
-        const sid=typeof d.source==='object'?d.source.id:d.source;
-        const tid=typeof d.target==='object'?d.target.id:d.target;
-        if(matches.has(sid)||matches.has(tid)) return 0.5;
-        return 0.01;
-      });
+  linkSel.transition().duration(400)
+    .attr('stroke-opacity', d => {
+      const sid=typeof d.source==='object'?d.source.id:d.source;
+      const tid=typeof d.target==='object'?d.target.id:d.target;
+      if(matches.has(sid)||matches.has(tid)) return 0.5;
+      return 0.01;
+    });
 
-    if(matches.size>0 && matches.size<=30) zoomToNodes([...matches]);
-  }, 300);
+  if(matches.size>0 && matches.size<=30) zoomToNodes([...matches]);
 });
 
 // ── BUILD TOUR BUTTONS ──────────────────────────────────────────────
