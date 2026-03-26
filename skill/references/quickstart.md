@@ -197,5 +197,17 @@ hce tour import investigation.json               # resume a previous investigati
 Tour status values: `active` (shown in visualization), `empty` (no results),
 `weak` (low quality), `hidden` (excluded). Only `active` tours render in the visualization.
 
+### Filtering test noise
+
+On large codebases, test files can dominate results. Use `--no-tests` to filter them:
+
+```bash
+hce lookup Session --callers --no-tests
+hce search "validate" --no-tests
+hce probe "how does auth work" --no-tests
+```
+
 ### Codebase overview
-```b
+```bash
+hce overview --top 20                # most-connected symbols (hub nodes)
+```

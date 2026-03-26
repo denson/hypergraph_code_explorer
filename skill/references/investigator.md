@@ -98,7 +98,8 @@ you do after evaluating the probe results.
 **Available HCE commands**:
 - `hce search <term>` — text search across all symbol names. Fast. Returns matching nodes.
 - `hce lookup <symbol> [--callers] [--calls] [--inherits] [--raises] [--depth N]` — exact structural lookup. Returns edges and connected nodes.
-- `hce probe "<question>"` — rule-based single-query probe. Classifies question, runs multiple lookups, builds a tour. Useful as a starting point but often noisy — treat its output as a first draft, not a final answer.
+- `hce probe "<question>"` — rule-based single-query probe. Classifies question, runs multiple lookups, builds a tour. Prints a structured summary to stdout (strategy, seed terms, top steps). Useful as a starting point but often noisy — treat its output as a first draft, not a final answer.
+- `hce blast-radius <symbol> [--depth N] [--task "<description>"]` — impact analysis for a symbol. Builds a tour of everything that depends on it.
 - `hce stats` — graph statistics and hub nodes.
 - `hce tour start "<name>"` — start a new investigation tour. All subsequent lookup/search/probe results auto-append.
 - `hce tour stop` — stop the active tour.
@@ -107,6 +108,8 @@ you do after evaluating the probe results.
 - `hce tour annotate <id> --finding "<text>" --status <active|empty|weak|hidden>` — annotate a tour with your interpretation.
 - `hce tour export --all --output <file>` — export tours for cross-session transfer.
 - `hce visualize --output <path>` — render all active tours to HTML.
+
+All query commands (`lookup`, `search`, `probe`) accept `--no-tests` to filter out test/benchmark/example file noise from results.
 
 **What HCE cannot do**: HCE cannot read code, run tests, search file contents (use grep for that), or reason about runtime behavior. It knows structure only.
 
@@ -161,11 +164,13 @@ Run focused queries, starting narrow and expanding only if needed.
 **Good query sequence for "how does random forest handle missing values":**
 ```bash
 hce search "RandomForestClassifier"          # Find the class
-hce lookup RandomForestClassifier.fit --calls --depth 2  # What does fit call?
+hce lookup RandomForestClassifier.fit --calls --depth 2 --no-tests  # What does fit call?
 hce search "MissingIndicator"                # Find the missing data handler
-hce lookup MissingIndicator --callers --depth 2          # Who uses it?
+hce lookup MissingIndicator --callers --depth 2 --no-tests          # Who uses it?
 hce search "missing"                         # Broader search if needed — but review results
 ```
+
+Use `--no-tests` on lookup and search to filter out test/benchmark/example file noise — especially useful on large codebases where test imports dominate results.
 
 **Bad query sequence (what the rule-based planner does):**
 ```bash
