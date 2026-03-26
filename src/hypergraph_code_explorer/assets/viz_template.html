@@ -596,6 +596,7 @@ function getConnectedNodes(tourNodeIds) {
 function activateTour(idx) {
   activeTourIdx = idx;
   activeStepIdx = -1;
+  document.getElementById('suggest-panel').style.display = 'none';
   document.querySelectorAll('.tour-btn').forEach((b,i) => {
     b.classList.toggle('active', i===idx);
     if(i===idx) b.style.setProperty('--tour-color', tours[i].color||'#00d4ff');
@@ -829,6 +830,23 @@ searchBox.addEventListener('keydown', (ev) => {
 });
 
 // ── BUILD TOUR BUTTONS ──────────────────────────────────────────────
+// Deduplicate tours by name (keep the last/largest version of each)
+const seenNames = new Map();
+tours.forEach((t, i) => { seenNames.set(t.name, i); });
+const uniqueTourIndices = [...seenNames.values()];
+const uniqueTours = uniqueTourIndices.map(i => tours[i]);
+tours.length = 0;
+uniqueTours.forEach(t => tours.push(t));
+
+// Rebuild tourNodeIds after deduplication
+tourNodeIds.clear();
+tours.forEach(t => {
+  (t.steps||[]).forEach(s => { if (s.node) tourNodeIds.add(s.node); });
+  (t.keywords||[]).forEach(k => {
+    nodes.forEach(n => { if (n.id===k || n.id.startsWith(k+'.') || n.id.startsWith(k)) tourNodeIds.add(n.id); });
+  });
+});
+
 const tourList = document.getElementById('tour-list');
 tours.forEach((t,i) => {
   const btn = document.createElement('button');
@@ -1096,226 +1114,50 @@ document.getElementById('tour-help-link').onclick = function() {
 };
 
 // ── TOUR SUGGESTION ENGINE ──────────────────────────────────────────
-function discoverClusters() {
-  // Group nodes by their top-level module prefix
-  const groups = {};
-  nodes.forEach(n => {
-    const g = n.group || 'other';
-    if (!groups[g]) groups[g] = [];
-    groups[g].push(n);
-  });
-
-  // Score each group: sum of importance, count of inter-group edges
-  const suggestions = [];
-  for (const [groupName, groupNodes] of Object.entries(groups)) {
-    if (groupName === 'other' || groupNodes.length < 2) continue;
-    const nodeIds = new Set(groupNodes.map(n => n.id));
-    const totalImportance = groupNodes.reduce((s, n) => s + n.importance, 0);
-    const internalEdges = edges.filter(e => {
-      const sid = typeof e.source === 'object' ? e.source.id : e.source;
-      const tid = typeof e.target === 'object' ? e.target.id : e.target;
-      return nodeIds.has(sid) && nodeIds.has(tid) && e.type !== 'DEFINES';
-    }).length;
-    const topSymbols = [...groupNodes].sort((a, b) => b.importance - a.importance).slice(0, 5);
-    suggestions.push({
-      name: groupName.charAt(0).toUpperCase() + groupName.slice(1),
-      score: totalImportance + internalEdges * 2,
-      nodeCount: groupNodes.length,
-      edgeCount: internalEdges,
-      topSymbols,
-      keywords: [groupName + '.'],
-      type: 'module'
-    });
-  }
-
-  // Cross-language tour (if multi-lang)
-  if (isMultiLang) {
-    const crossEdges = edges.filter(e => {
-      const sn = nodes.find(n => n.id === (typeof e.source === 'object' ? e.source.id : e.source));
-      const tn = nodes.find(n => n.id === (typeof e.target === 'object' ? e.target.id : e.target));
-      return sn && tn && sn.language !== tn.language && e.type !== 'DEFINES';
-    });
-    if (crossEdges.length > 0) {
-      const crossNodes = new Set();
-      crossEdges.forEach(e => {
-        crossNodes.add(typeof e.source === 'object' ? e.source.id : e.source);
-        crossNodes.add(typeof e.target === 'object' ? e.target.id : e.target);
-      });
-      const topCross = [...crossNodes].map(id => nodes.find(n => n.id === id)).filter(Boolean)
-        .sort((a, b) => b.importance - a.importance).slice(0, 5);
-      suggestions.push({
-        name: 'Cross-Language Boundaries',
-        score: crossEdges.length * 5,
-        nodeCount: crossNodes.size,
-        edgeCount: crossEdges.length,
-        topSymbols: topCross,
-        keywords: [...crossNodes].slice(0, 10),
-        type: 'cross-language'
-      });
-    }
-  }
-
-  // "Most Important" suggestion if not already a tour
-  const hasImportantTour = tours.some(t => t.name.toLowerCase().includes('important'));
-  if (!hasImportantTour) {
-    const topAll = [...nodes].sort((a, b) => b.importance - a.importance).slice(0, 15);
-    suggestions.unshift({
-      name: 'Most Important Symbols',
-      score: 99999,
-      nodeCount: topAll.length,
-      edgeCount: 0,
-      topSymbols: topAll.slice(0, 5),
-      keywords: topAll.map(n => n.id),
-      type: 'importance'
-    });
-  }
-
-  return suggestions.sort((a, b) => b.score - a.score);
-}
-
-const suggestPanel = document.getElementById('suggest-panel');
-let suggestVisible = false;
-
 document.getElementById('btn-suggest').onclick = function() {
-  suggestVisible = !suggestVisible;
-  if (!suggestVisible) { suggestPanel.style.display = 'none'; return; }
-
-  const suggestions = discoverClusters();
-  // Filter out groups that already have tours
-  const existingKeywords = new Set();
-  tours.forEach(t => t.keywords.forEach(k => existingKeywords.add(k)));
-
-  const novel = suggestions.filter(s =>
-    !s.keywords.every(k => existingKeywords.has(k))
-  );
-
-  suggestPanel.style.display = 'block';
-  if (!novel.length) {
-    suggestPanel.innerHTML = '<div class="sg-info">All major clusters already have tours. Nice coverage!</div>';
+  const panel = document.getElementById('suggest-panel');
+  if (panel.style.display === 'block') {
+    panel.style.display = 'none';
     return;
   }
+  const nodeCount = nodes.length;
+  const tourCount = tours.length;
+  const topNodes = nodes.slice().sort((a,b) => (b.importance||0) - (a.importance||0)).slice(0, 8).map(n => n.id);
 
-  suggestPanel.innerHTML = '<div class="sg-info">Click a suggestion to preview it on the graph:</div>' +
-    novel.slice(0, 8).map((s, i) => `
-      <div class="sg-tour" data-idx="${i}">
-        <strong>${s.name}</strong>
-        <span style="color:#556;font-size:0.7rem;"> &mdash; ${s.nodeCount} symbols, ${s.edgeCount} connections</span>
-        <div class="sg-nodes">Top: ${s.topSymbols.map(n => n.label).join(', ')}</div>
-      </div>
-    `).join('');
-
-  const novelRef = novel; // closure reference
-  suggestPanel.querySelectorAll('.sg-tour').forEach(el => {
-    el.onclick = () => {
-      const s = novelRef[+el.dataset.idx];
-      // Preview: highlight these nodes on the graph
-      const ids = new Set(s.type === 'importance' ? s.keywords : []);
-      if (s.type !== 'importance') {
-        nodes.forEach(n => { if (s.keywords.some(k => n.id === k || n.id.startsWith(k))) ids.add(n.id); });
-      }
-      const connected = getConnectedNodes(ids);
-
-      // Expand focus window to include suggestion nodes
-      if (!smallGraph && ids.size > 0) {
-        focusWindow.clear();
-        ids.forEach(id => focusWindow.add(id));
-        connected.forEach(id => focusWindow.add(id));
-        tourNodeIds.forEach(id => focusWindow.add(id));
-        nodes.forEach(d => {
-          if (ids.has(d.id)) d._focusHop = 0;
-          else if (connected.has(d.id)) d._focusHop = 1;
-          else d._focusHop = 99;
-        });
-        rebuildFocusView();
-      }
-
-      nodeSel.transition().duration(500)
-        .attr('fill-opacity', d => ids.has(d.id) ? 1 : connected.has(d.id) ? 0.2 : 0.03)
-        .attr('r', d => ids.has(d.id) ? nodeRadius(d) * 1.3 : nodeRadius(d))
-        .attr('filter', d => ids.has(d.id) ? 'url(#glow)' : null);
-      setLabelOpacity(labelSel, 500, d => ids.has(d.id) ? 1 : 0);
-      labelSel.transition().duration(500)
-        .attr('font-size', d => ids.has(d.id) ? '10px' : '0px');
-      linkSel.transition().duration(500)
-        .attr('stroke-opacity', d => {
-          const sid = typeof d.source === 'object' ? d.source.id : d.source;
-          const tid = typeof d.target === 'object' ? d.target.id : d.target;
-          if (ids.has(sid) || ids.has(tid)) return 0.5;
-          return 0.01;
-        });
-      if (ids.size > 0 && ids.size <= 50) zoomToNodes([...ids]);
-    };
-  });
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="sg-info">Tour suggestions require Claude. Copy this into a Claude conversation:</div>
+    <div class="sg-tour" onclick="navigator.clipboard.writeText(this.querySelector('code').textContent); this.style.borderColor='#00e88f';">
+      <strong>Click to copy suggestion prompt</strong>
+      <code style="display:block;margin-top:6px;font-size:0.7rem;color:#889;white-space:pre-wrap;">I have an HCE graph of ${document.querySelector('h1')?.textContent || 'a codebase'} with ${nodeCount} symbols and ${tourCount} existing tours. The highest-importance nodes are: ${topNodes.join(', ')}. Suggest 3 interesting tours I should explore, each with a theme and list of key nodes.</code>
+    </div>
+  `;
 };
 
 // ── COPY PROMPT FOR CLAUDE ─────────────────────────────────────────
 document.getElementById('btn-copy-prompt').onclick = function() {
-  const btn = this;
+  const title = document.querySelector('h1')?.textContent || 'this codebase';
+  const tourNames = tours.map(t => t.name).join(', ');
+  const activeT = activeTourIdx >= 0 ? tours[activeTourIdx] : null;
 
-  // Gather graph context
-  const topByImportance = [...nodes].sort((a, b) => b.importance - a.importance).slice(0, 25);
-  const groupSummary = {};
-  nodes.forEach(n => {
-    if (!groupSummary[n.group]) groupSummary[n.group] = { count: 0, topImportance: 0 };
-    groupSummary[n.group].count++;
-    groupSummary[n.group].topImportance = Math.max(groupSummary[n.group].topImportance, n.importance);
-  });
-  const groupLines = Object.entries(groupSummary)
-    .sort((a, b) => b[1].topImportance - a[1].topImportance)
-    .map(([g, v]) => `  - ${g}: ${v.count} symbols (peak importance ${v.topImportance})`).join('\n');
-  const topLines = topByImportance.map(n =>
-    `  - ${n.id} (group: ${n.group}, importance: ${n.importance}, lang: ${n.language})`
-  ).join('\n');
-
-  const existingTourNames = tours.map(t => t.name).join(', ') || '(none yet)';
-
-  const langInfo = isMultiLang
-    ? `Languages: ${Object.entries(langCounts).sort((a,b)=>b[1]-a[1]).map(([l,c])=>`${l} (${c})`).join(', ')}\n`
-    : '';
-
-  const prompt = `I have an HCE (Hypergraph Code Explorer) visualization of a codebase with ${nodes.length} symbols and ${edges.length} edges.
-${langInfo}
-Groups in the graph:
-${groupLines}
-
-Top 25 symbols by importance:
-${topLines}
-
-Existing tours: ${existingTourNames}
-
-Please suggest 3-5 new guided tours for this codebase. For each tour, provide:
-- name: A short descriptive title
-- color: A hex color that looks good on a dark (#0a0a1a) background
-- keywords: Array of node ID prefixes that belong to this tour
-- steps: 4-6 narrative steps, each with "text" (HTML with <strong class='tc'>symbol</strong> tags) and "node" (the target node ID)
-
-Format the output as a JSON object I can merge into my tours.json file:
-{
-  "tours": [
-    {
-      "name": "Tour Name",
-      "color": "#hex",
-      "keywords": ["prefix1", "prefix2"],
-      "steps": [{"text": "...", "node": "symbol.id"}, ...]
-    }
-  ]
-}
-
-Focus on architectural patterns, data flow, and subsystems not already covered by the existing tours. Each narrative step should explain why the symbol matters and what would break without it.`;
+  let prompt = `I'm exploring ${title} using HCE (Hypergraph Code Explorer).\n\n`;
+  if (tours.length) {
+    prompt += `Available tours: ${tourNames}\n\n`;
+  }
+  if (activeT) {
+    const stepNodes = (activeT.steps||[]).map(s => s.node).filter(Boolean).join(', ');
+    prompt += `I'm currently viewing the "${activeT.name}" tour which covers: ${stepNodes}\n\n`;
+  }
+  if (focusNodeId) {
+    prompt += `I'm focused on node: ${focusNodeId}\n\n`;
+  }
+  prompt += `Help me understand the architecture and relationships shown in this exploration.`;
 
   navigator.clipboard.writeText(prompt).then(() => {
-    btn.textContent = 'Copied!';
+    const btn = document.getElementById('btn-copy-prompt');
     btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = 'Copy Prompt for Claude'; btn.classList.remove('copied'); }, 2000);
-  }).catch(() => {
-    // Fallback for non-HTTPS contexts
-    const ta = document.createElement('textarea');
-    ta.value = prompt; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
-    document.body.removeChild(ta);
     btn.textContent = 'Copied!';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = 'Copy Prompt for Claude'; btn.classList.remove('copied'); }, 2000);
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = 'Copy Prompt for Claude'; }, 2000);
   });
 };
 
