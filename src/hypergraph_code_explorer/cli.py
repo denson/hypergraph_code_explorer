@@ -1002,13 +1002,15 @@ def _run_probe(args):
     # Count total tours
     total_tours = len(session._get_tour_store())
 
-    # Machine-readable summary line
-    print(f"Strategy: {tour.strategy} | Steps: {len(tour.steps)} | "
-          f"Status: {tour.status} | Tour: {tour.id} | "
-          f"Total tours: {total_tours}")
+    # Structured summary
+    print(f'\nProbe: "{args.question}"')
+    print(f'  Strategy: {tour.strategy} | Seed terms: {", ".join(tour.keywords)}')
+    files_touched = len({s.file for s in tour.steps if s.file})
+    print(f'  Tour: "{tour.name}" ({len(tour.steps)} steps, {files_touched} files)')
+    print(f'  Status: {tour.status} | ID: {tour.id} | Total tours: {total_tours}')
 
     if not tour.steps:
-        print("  No relevant symbols found. Try different terms or check "
+        print("\n  No relevant symbols found. Try different terms or check "
               "that the codebase is indexed.")
         if not args.no_viz:
             # Still render viz with all active tours
@@ -1023,11 +1025,22 @@ def _run_probe(args):
                 print(f"  HTML: {result['html']}")
         return
 
+    # Top steps
+    print('\n  Top steps:')
+    for i, step in enumerate(tour.steps[:10], 1):
+        edge = str(step.edge_type).replace("EdgeType.", "") if step.edge_type else ""
+        fname = Path(step.file).name if step.file else ""
+        label = f"[{edge}] " if edge else ""
+        target = f" -> {fname}" if fname else ""
+        print(f'    {i}. {step.node} {label}{target}')
+    remaining = len(tour.steps) - 10
+    if remaining > 0:
+        print(f'    ... ({remaining} more)')
+
     # Write analysis prompt
     prompt = generate_analysis_prompt(tour, task_description=args.question)
     prompt_path = Path(args.output + "_prompt.md")
     prompt_path.write_text(prompt, encoding="utf-8")
-    print(f"  Prompt: {prompt_path}")
 
     # Generate visualization (all active tours)
     if not args.no_viz:
@@ -1038,15 +1051,20 @@ def _run_probe(args):
             max_neighborhood_hops=args.hops,
             max_svg=args.max_svg,
         )
+
+    # Output files
+    print('\n  Output:')
+    print(f'    Prompt: {prompt_path}')
+    if not args.no_viz:
         node_msg = f"{result['nodes']} nodes, {result['edges']} edges"
         if result.get("fog_tour_nodes"):
             node_msg += (
                 f" (fog: {result['fog_tour_nodes']} tour, "
                 f"~{result['fog_near']} near, ~{result['fog_far']} in fog)"
             )
-        print(f"  HTML: {result['html']}  ({node_msg})")
+        print(f'    Visualization: {result["html"]}  ({node_msg})')
         if result.get("md"):
-            print(f"  Report: {result['md']}")
+            print(f'    Report: {result["md"]}')
 
 
 def _run_blast_radius(args):
@@ -1062,10 +1080,25 @@ def _run_blast_radius(args):
         task_description=args.task,
     )
 
-    print(f"Blast radius tour: {tour.name}")
-    print(f"  ID: {tour.id}")
-    print(f"  Steps: {len(tour.steps)}")
-    print(f"  Keywords: {', '.join(tour.keywords[:10])}")
+    # Structured summary
+    print(f'\nBlast radius: "{args.symbol}"')
+    print(f'  Strategy: {tour.strategy} | Seed terms: {", ".join(tour.keywords)}')
+    files_touched = len({s.file for s in tour.steps if s.file})
+    print(f'  Tour: "{tour.name}" ({len(tour.steps)} steps, {files_touched} files)')
+    print(f'  ID: {tour.id}')
+
+    # Top steps
+    if tour.steps:
+        print('\n  Top steps:')
+        for i, step in enumerate(tour.steps[:10], 1):
+            edge = str(step.edge_type).replace("EdgeType.", "") if step.edge_type else ""
+            fname = Path(step.file).name if step.file else ""
+            label = f"[{edge}] " if edge else ""
+            target = f" -> {fname}" if fname else ""
+            print(f'    {i}. {step.node} {label}{target}')
+        remaining = len(tour.steps) - 10
+        if remaining > 0:
+            print(f'    ... ({remaining} more)')
 
     # Write analysis prompt
     prompt = generate_analysis_prompt(
@@ -1073,7 +1106,6 @@ def _run_blast_radius(args):
     )
     prompt_path = Path(args.output + "_prompt.md")
     prompt_path.write_text(prompt, encoding="utf-8")
-    print(f"  Prompt: {prompt_path}")
 
     # Generate visualization
     result = session.visualize(
@@ -1081,15 +1113,19 @@ def _run_blast_radius(args):
         max_neighborhood_hops=args.hops,
         max_svg=args.max_svg,
     )
+
+    # Output files
+    print('\n  Output:')
+    print(f'    Prompt: {prompt_path}')
     node_msg = f"{result['nodes']} nodes, {result['edges']} edges"
     if result.get("fog_tour_nodes"):
         node_msg += (
             f" (fog: {result['fog_tour_nodes']} tour, "
             f"~{result['fog_near']} near, ~{result['fog_far']} in fog)"
         )
-    print(f"  HTML: {result['html']}  ({node_msg})")
-    if result["md"]:
-        print(f"  Report: {result['md']}")
+    print(f'    Visualization: {result["html"]}  ({node_msg})')
+    if result.get("md"):
+        print(f'    Report: {result["md"]}')
 
 
 def _run_visualize(args):
