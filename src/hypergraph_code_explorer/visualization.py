@@ -572,33 +572,30 @@ def highlight_symbols(
         symbols.add(kw)
         if "." in kw:
             symbols.add(kw.split(".")[-1])
+
+    # Only add graph node IDs that actually appear in the text
+    # (fast substring check before expensive regex)
     for nid in graph_node_ids:
-        if "." in nid:
-            symbols.add(nid.split(".")[-1])
-        symbols.add(nid)
+        short = nid.split(".")[-1] if "." in nid else nid
+        if short in text:
+            symbols.add(short)
+            symbols.add(nid)
 
     symbols = {s for s in symbols if len(s) > 3 and s not in GENERIC_SYMBOLS}
 
+    if not symbols:
+        return text
+
+    # Build ONE combined pattern instead of one per symbol
     sorted_symbols = sorted(symbols, key=len, reverse=True)
-    already_wrapped: list[tuple[int, int]] = []
+    combined_pattern = re.compile(
+        r"(?<![<\w.])(?:" + "|".join(re.escape(s) for s in sorted_symbols) + r")(?![>\w])"
+    )
 
-    for sym in sorted_symbols:
-        pattern = re.compile(r"(?<![<\w.])" + re.escape(sym) + r"(?![>\w])")
-        for m in pattern.finditer(text):
-            start, end = m.start(), m.end()
-            if any(s <= start < e or s < end <= e for s, e in already_wrapped):
-                continue
-            replacement = f"<strong class='tc'>{sym}</strong>"
-            text = text[:start] + replacement + text[end:]
-            offset = len(replacement) - (end - start)
-            already_wrapped = [
-                (s + offset if s > start else s, e + offset if e > start else e)
-                for s, e in already_wrapped
-            ]
-            already_wrapped.append((start, start + len(replacement)))
-            break  # re-scan after replacement
+    def replace_match(m: re.Match) -> str:
+        return f"<strong class='tc'>{m.group()}</strong>"
 
-    return text
+    return combined_pattern.sub(replace_match, text)
 
 
 def memory_tours_to_viz(
@@ -606,6 +603,13 @@ def memory_tours_to_viz(
     graph_node_ids: set[str],
 ) -> list[dict]:
     """Convert ``MemoryTour`` objects to the viz template tour format."""
+    # Pre-build short-name set for O(1) keyword lookup
+    short_names: set[str] = set()
+    for nid in graph_node_ids:
+        if "." in nid:
+            short_names.add(nid.split(".")[-1])
+        short_names.add(nid)
+
     viz_tours: list[dict] = []
     for i, tour in enumerate(tours):
         color = TOUR_PALETTE[i % len(TOUR_PALETTE)]
@@ -614,10 +618,7 @@ def memory_tours_to_viz(
         for step in tour.steps:
             keywords.append(step.node)
         for kw in tour.keywords:
-            if kw in graph_node_ids or any(
-                nid.startswith(kw) or nid.endswith("." + kw)
-                for nid in graph_node_ids
-            ):
+            if kw in graph_node_ids or kw in short_names:
                 keywords.append(kw)
         keywords = list(dict.fromkeys(keywords))
 
