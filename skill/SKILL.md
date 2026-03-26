@@ -85,6 +85,8 @@ HCE uses tree-sitter for multi-language extraction. It handles Python, JavaScrip
 
 Always use `--skip-summaries` to keep the pipeline zero-cost (no API key needed). The index saves to `.hce_cache/` inside the source root and persists across sessions.
 
+**Plugin users**: If installed via Claude Code marketplace, enable auto-update (see `references/quickstart.md` "Keeping HCE updated") to get new versions automatically.
+
 ### HCE query commands
 
 Once indexed, HCE has four query commands. These are the primary way to understand a codebase — use them before reading any source files, both for standalone exploration and during visualization tour design (see Phase 3):

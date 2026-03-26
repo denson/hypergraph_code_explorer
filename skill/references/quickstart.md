@@ -55,6 +55,37 @@ The `python -m hypergraph_code_explorer.cli` fallback is functionally identical 
 Scripts directory to your system PATH. Ask Claude to help you find and set the right path
 for your OS.
 
+### Keeping HCE updated
+
+If you installed HCE via a Claude Code marketplace, enable auto-update so you always
+get the latest version:
+
+1. In Claude Code, run `/plugin`
+2. Go to the **Marketplaces** tab
+3. Select the HCE marketplace and toggle **Enable auto-update**
+
+With auto-update enabled, Claude Code checks for new versions at startup and
+updates automatically.
+
+To manually update at any time:
+```
+/plugin marketplace update hce-tools
+/reload-plugins
+```
+
+If updates aren't detected, force a refresh:
+```
+claude plugin update hce@hce-tools
+```
+
+As a last resort, clear the plugin cache and reinstall:
+```bash
+# Delete the cached plugin
+rm -rf ~/.claude/plugins/cache
+# On Windows: remove C:\Users\<you>\.claude\plugins\cache
+# Then restart Claude Code — the plugin will re-download from the marketplace
+```
+
 Optional extras (append to any install command above):
 ```
 pip install "hypergraph_code_explorer[embed]"   # Tier 4 semantic search
