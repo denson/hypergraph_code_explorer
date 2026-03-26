@@ -1,6 +1,6 @@
 [project]
 name = "hypergraph-code-explorer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Multi-language hypergraph-based code exploration with edge-intersection traversal, exposed as an MCP server"
 license = "MIT"
 authors = [{name = "Denson Smith", email = "densonsmith2@gmail.com"}]
