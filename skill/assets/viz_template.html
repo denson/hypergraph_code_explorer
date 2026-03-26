@@ -457,8 +457,8 @@ function drawHeatmapGrid(transform) {
     }
   }
   // Subtle grid lines
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-  ctx.lineWidth = 0.5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
   for (let i = 0; i <= gridSize; i++) {
     ctx.beginPath(); ctx.moveTo(i * cellW, 0); ctx.lineTo(i * cellW, ch); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, i * cellH); ctx.lineTo(cw, i * cellH); ctx.stroke();
@@ -478,26 +478,39 @@ function drawFogDots(transform) {
   });
 }
 
+function drawModeLabel(mode) {
+  ctx.save();
+  ctx.font = '11px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.fillText(mode.toUpperCase(), 8, canvas.height - 8);
+  ctx.restore();
+}
+
 function drawHeatmap(transform) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (smallGraph && heatmapMode === 'off') return;
+
+  // True off — hide canvas entirely
+  if (heatmapMode === 'off') {
+    canvas.style.display = 'none';
+    return;
+  }
+  canvas.style.display = 'block';
 
   if (heatmapMode === 'density') {
     drawHeatmapDensity(transform);
+    drawModeLabel(heatmapMode);
   } else if (heatmapMode === 'grid') {
     drawHeatmapGrid(transform);
-  }
-
-  // Always draw fog dots for non-small graphs (unless density/grid covers it)
-  if (!smallGraph) {
+    drawModeLabel(heatmapMode);
+  } else if (heatmapMode === 'fog') {
     ctx.save();
     ctx.translate(transform.x, transform.y);
     ctx.scale(transform.k, transform.k);
-    if (heatmapMode === 'off') drawFogDots(transform);
+    drawFogDots(transform);
     ctx.restore();
   }
 }
-canvas.style.display = (smallGraph && heatmapMode === 'off') ? 'none' : 'block';
+canvas.style.display = 'none';  // Start hidden; drawHeatmap controls visibility
 
 // ── RESOLVE EDGE REFERENCES (no force simulation) ──────────────────
 // Positions are pre-computed. Manually resolve edge source/target to objects.
@@ -1000,15 +1013,13 @@ document.getElementById('btn-lang').onclick = function() {
 };
 
 document.getElementById('btn-heatmap').onclick = function() {
-  const modes = ['off', 'density', 'grid'];
-  const labels = ['Heatmap: Off', 'Heatmap: Density', 'Heatmap: Grid'];
+  const modes = ['off', 'fog', 'density', 'grid'];
+  const labels = ['Heatmap: Off', 'Heatmap: Fog', 'Heatmap: Density', 'Heatmap: Grid'];
   const idx = (modes.indexOf(heatmapMode) + 1) % modes.length;
   heatmapMode = modes[idx];
   this.textContent = labels[idx];
   this.classList.toggle('on', heatmapMode !== 'off');
-  canvas.style.display = (smallGraph && heatmapMode === 'off') ? 'none' : 'block';
-  // Remove blur filter from canvas when in density/grid mode (cleaner look)
-  canvas.style.filter = heatmapMode === 'off' ? 'blur(4px)' : 'none';
+  canvas.style.filter = heatmapMode === 'fog' ? 'blur(4px)' : 'none';
   drawHeatmap(currentTransform);
 };
 
