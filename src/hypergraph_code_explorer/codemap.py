@@ -231,7 +231,7 @@ def generate_codemap(
     if call_chains:
         lines.append(f"## Call Chains (top {len(call_chains)} by depth)")
         for chain in call_chains:
-            lines.append("- " + " \u2192 ".join(chain))
+            lines.append("- " + " -> ".join(chain))
         lines.append("")
 
     # --- Inheritance Trees ---
@@ -239,7 +239,7 @@ def generate_codemap(
     if trees:
         lines.append(f"## Inheritance Trees (top {len(trees)})")
         for base, children in trees:
-            lines.append(f"- {base} \u2190 {', '.join(children)}")
+            lines.append(f"- {base} <- {', '.join(children)}")
         lines.append("")
 
     # --- CLI Quick Reference ---

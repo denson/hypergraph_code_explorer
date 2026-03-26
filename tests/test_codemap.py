@@ -61,7 +61,7 @@ def test_codemap_contains_call_chains():
     md = generate_codemap(builder)
     assert "## Call Chains" in md
     # Should have a chain like sessions.Session.send → get_adapter or → adapter.send
-    assert "→" in md
+    assert "->" in md
 
 
 def test_codemap_contains_inheritance_trees():
@@ -70,7 +70,7 @@ def test_codemap_contains_inheritance_trees():
     assert "## Inheritance Trees" in md
     # AuthBase is the base class
     assert "auth.AuthBase" in md
-    assert "←" in md
+    assert "<-" in md
 
 
 def test_codemap_cli_reference():

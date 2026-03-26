@@ -433,7 +433,7 @@ def _maybe_append_to_active_tour(
         parts.append(f"skipped {skipped} duplicates")
     parts.append(f"total: {total}")
 
-    print(f"\u2192 Tour {tour_id}: {', '.join(parts)}")
+    print(f"-> Tour {tour_id}: {', '.join(parts)}")
 
 
 # ---------------------------------------------------------------------------
@@ -791,7 +791,7 @@ def _run_tour(args):
             for t in tours:
                 promoted = " [promoted]" if t.promoted else ""
                 status_str = f" [{t.status}]" if t.status != "active" else ""
-                active_str = " \u25c0 ACTIVE" if t.id == active_id else ""
+                active_str = " [ACTIVE]" if t.id == active_id else ""
                 tags = f"  tags: {', '.join(t.tags)}" if t.tags else ""
                 print(f"  {t.id}  {t.name}{promoted}{status_str}{active_str}{tags}")
                 print(f"         {t.summary}")
@@ -985,7 +985,7 @@ def _run_probe(args):
         if skipped:
             parts.append(f"skipped {skipped} duplicates")
         parts.append(f"total: {total}")
-        print(f"\u2192 Tour {active_tour.id}: {', '.join(parts)}")
+        print(f"-> Tour {active_tour.id}: {', '.join(parts)}")
         # Use the active tour for visualization below
         tour = updated_tour if updated_tour else tour
 
