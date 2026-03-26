@@ -662,12 +662,13 @@ function spotlightStep(si) {
 
   // Shift focus to this tour step
   updateFocusWindow(step.node);
+  openDrawer(step.node);
 
   const tourNodeIds = new Set();
   nodes.forEach(d => { if(isTourNode(d,tour)) tourNodeIds.add(d.id); });
 
   // Zoom to target
-  const scale = 1.3;
+  const scale = 0.8;
   svgEl.transition().duration(800).call(
     zoomBehavior.transform,
     d3.zoomIdentity.translate(W/2-(target.x*scale), H/2-(target.y*scale)).scale(scale)
@@ -702,7 +703,32 @@ function spotlightStep(si) {
     .attr('filter','url(#pulse-glow)');
 
   function pulse(i) {
-    if(i>=4) { ring.remove(); activateTour(activeTourIdx); return; }
+    if(i>=3) {
+      ring.remove();
+      const settleScale = 0.8;
+      svgEl.transition().duration(600).call(
+        zoomBehavior.transform,
+        d3.zoomIdentity.translate(W/2-(target.x*settleScale), H/2-(target.y*settleScale)).scale(settleScale)
+      );
+      const allTourNodes = new Set();
+      nodes.forEach(d => { if(isTourNode(d,tours[activeTourIdx])) allTourNodes.add(d.id); });
+      nodeSel.transition().duration(600)
+        .attr('r', d => d.id===target.id ? nodeRadius(d)*2.2 : allTourNodes.has(d.id)?nodeRadius(d)*1.1:nodeRadius(d))
+        .attr('fill-opacity', d => d.id===target.id?1 : allTourNodes.has(d.id)?0.6 : focusWindow.has(d.id)?0.2 : 0.04)
+        .attr('filter', d => d.id===target.id?'url(#pulse-glow)' : allTourNodes.has(d.id)?'url(#glow)':null);
+      setLabelOpacity(labelSel, 600, d =>
+        d.id===target.id?1 : allTourNodes.has(d.id)?0.4 : 0
+      );
+      linkSel.transition().duration(600)
+        .attr('stroke-opacity', d => {
+          const sid = typeof d.source==='object'?d.source.id:d.source;
+          const tid = typeof d.target==='object'?d.target.id:d.target;
+          if(sid===target.id||tid===target.id) return 0.6;
+          if(allTourNodes.has(sid)&&allTourNodes.has(tid)) return 0.3;
+          return 0.02;
+        });
+      return;
+    }
     ring.transition().duration(500)
       .attr('r', nodeRadius(target)*3.5).attr('stroke-opacity',0)
       .transition().duration(300)
