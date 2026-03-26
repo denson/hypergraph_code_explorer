@@ -93,11 +93,27 @@ _STOPWORDS = {
 }
 
 
+def _depluralize(tok: str) -> str | None:
+    """Strip common English plurals to recover likely symbol names.
+
+    'ValueErrors' -> 'ValueError', 'validators' -> 'validator',
+    'classes' -> 'class', 'entries' -> 'entry'.
+    """
+    if tok.endswith("ies") and len(tok) > 4:
+        return tok[:-3] + "y"
+    if tok.endswith("ses") or tok.endswith("xes") or tok.endswith("zes"):
+        return tok[:-2]
+    if tok.endswith("s") and not tok.endswith("ss") and len(tok) > 3:
+        return tok[:-1]
+    return None
+
+
 def extract_seed_terms(question: str) -> list[str]:
     """Extract likely symbol names and search terms from the question.
 
     More aggressive than dispatch._extract_dispatch_terms — also detects
-    CamelCase tokens and dot-paths (e.g. ``Pipeline.fit``).
+    CamelCase tokens, dot-paths (e.g. ``Pipeline.fit``), and depluralized
+    forms (e.g. ``ValueErrors`` -> ``ValueError``).
     """
     terms: list[str] = []
     seen: set[str] = set()
@@ -108,16 +124,22 @@ def extract_seed_terms(question: str) -> list[str]:
             seen.add(low)
             terms.append(tok)
 
+    def _add_with_deplural(tok: str) -> None:
+        _add(tok)
+        singular = _depluralize(tok)
+        if singular:
+            _add(singular)
+
     # Detect dot-paths first (e.g. Pipeline.fit, forms.ValidationError)
     for m in re.finditer(r'[A-Za-z_][\w]*(?:\.[A-Za-z_]\w*)+', question):
         tok = m.group()
-        _add(tok)
+        _add_with_deplural(tok)
         for part in tok.split('.'):
-            _add(part)
+            _add_with_deplural(part)
 
     # Detect CamelCase words
     for m in re.finditer(r'\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b', question):
-        _add(m.group())
+        _add_with_deplural(m.group())
 
     # Remaining tokens: split on whitespace/punctuation, filter stopwords
     raw = re.split(r'[\s,;:!?(){}\[\]"\'`/\\]+', question)
@@ -127,6 +149,10 @@ def extract_seed_terms(question: str) -> list[str]:
             if low and low not in seen and low not in _STOPWORDS and len(low) >= 3:
                 seen.add(low)
                 terms.append(part)
+                # Also try depluralized form
+                singular = _depluralize(part)
+                if singular:
+                    _add(singular)
 
     return terms
 
@@ -229,18 +255,35 @@ def _plan_exception_flow(
     *,
     depth: int = 2,
 ) -> None:
+    # RAISES lookups for all seeds
     for term in seed_terms[:5]:
         p = session.lookup(term, edge_types=["RAISES"], direction="both", depth=depth)
         if not p.is_empty():
             plan.merge(p)
-    # Also search for error/exception terms
+
+    # If RAISES lookups found nothing, try broader lookup (all edge types)
+    # for error-like terms — they're still useful for understanding exception context
+    if plan.is_empty():
+        for term in seed_terms[:5]:
+            p = session.lookup(term, direction="both", depth=1)
+            if not p.is_empty():
+                plan.merge(p)
+
+    # Text search for error/exception terms
     error_terms = [t for t in seed_terms if any(
-        kw in t.lower() for kw in ("error", "exception", "fail", "invalid")
+        kw in t.lower() for kw in ("error", "exception", "fail", "invalid", "raise", "value")
     )]
-    for term in (error_terms or seed_terms)[:3]:
+    for term in (error_terms or seed_terms)[:5]:
         p_search = session.search(term, max_results=15)
         if not p_search.is_empty():
             plan.merge(p_search)
+
+    # If still empty, search all seed terms
+    if plan.is_empty():
+        for term in seed_terms[:5]:
+            p_search = session.search(term, max_results=10)
+            if not p_search.is_empty():
+                plan.merge(p_search)
 
 
 def _plan_api_surface(
