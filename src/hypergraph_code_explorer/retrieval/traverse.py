@@ -134,7 +134,10 @@ def traverse(
     if hub_nodes is None:
         # Only compute hub nodes for graphs large enough that hubs are meaningful
         if len(builder._incidence) >= 50:
-            hub_nodes = builder.get_hub_nodes()
+            if edge_types:
+                hub_nodes = builder.get_hub_nodes_for_edge_type(edge_types)
+            else:
+                hub_nodes = builder.get_hub_nodes()
         else:
             hub_nodes = set()
 

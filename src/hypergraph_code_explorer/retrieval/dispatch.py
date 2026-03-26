@@ -310,6 +310,7 @@ def dispatch(
             for sym in t1_plan.related_symbols:
                 score = _score_node_specificity(
                     sym.name, sym.name.rsplit(".", 1)[-1].lower(), builder,
+                    edge_types=edge_types,
                 )
                 if score < MIN_SEED_SPECIFICITY:
                     low_spec_nodes.add(sym.name)
@@ -350,7 +351,10 @@ def dispatch(
                 if use_specificity:
                     # Rank seeds by specificity and filter low-value ones
                     scored_seeds = [
-                        (node, _score_node_specificity(node, node.rsplit(".", 1)[-1].lower(), builder))
+                        (node, _score_node_specificity(
+                            node, node.rsplit(".", 1)[-1].lower(), builder,
+                            edge_types=edge_types,
+                        ))
                         for node in seed_nodes
                     ]
                     scored_seeds.sort(key=lambda x: x[1], reverse=True)

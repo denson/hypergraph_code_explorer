@@ -98,6 +98,7 @@ def _score_node_specificity(
     node: str,
     token: str,
     builder: HypergraphBuilder,
+    edge_types: list[str] | None = None,
 ) -> float:
     """Score how specific a node match is (higher = more specific, more useful).
 
@@ -108,9 +109,26 @@ def _score_node_specificity(
 
     All thresholds are relative to graph size so this works from small
     projects (500 nodes) to large frameworks (23k+ nodes).
+
+    When ``edge_types`` is provided, counts only edges of those types for
+    degree calculation. This prevents high-total-degree nodes (e.g.
+    ValueError) from being filtered when querying specific edge types
+    (e.g. RAISES) where their degree is much lower.
     """
-    degree = len(builder._node_to_edges.get(node, set()))
-    total_edges = max(len(builder._incidence), 1)
+    if edge_types:
+        edge_type_set = set(edge_types)
+        all_edge_ids = builder._node_to_edges.get(node, set())
+        degree = sum(
+            1 for eid in all_edge_ids
+            if eid in builder._edge_store and builder._edge_store[eid].edge_type in edge_type_set
+        )
+        total_edges = max(
+            sum(1 for e in builder._edge_store.values() if e.edge_type in edge_type_set),
+            1,
+        )
+    else:
+        degree = len(builder._node_to_edges.get(node, set()))
+        total_edges = max(len(builder._incidence), 1)
 
     # --- Degree factor (scale-relative) ---
     # What fraction of all edges does this node touch?

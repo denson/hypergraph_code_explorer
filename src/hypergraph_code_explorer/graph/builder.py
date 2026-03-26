@@ -206,6 +206,39 @@ class HypergraphBuilder:
             if len(edge_ids) > threshold
         }
 
+    def get_hub_nodes_for_edge_type(
+        self,
+        edge_types: list[str],
+        max_degree_pct: float = 0.03,
+        min_degree_floor: int = 50,
+    ) -> set[str]:
+        """Return hub nodes considering only edges of the specified types.
+
+        Like get_hub_nodes(), but counts only edges matching the given types.
+        This prevents nodes like ValueError (high total degree but moderate
+        RAISES degree) from being treated as hubs when querying specific
+        edge types.
+        """
+        edge_type_set = set(edge_types)
+        filtered_counts: dict[str, int] = {}
+        filtered_total = 0
+        for edge_id, edge in self._edge_store.items():
+            if edge.edge_type not in edge_type_set:
+                continue
+            filtered_total += 1
+            for node in edge.all_nodes:
+                filtered_counts[node] = filtered_counts.get(node, 0) + 1
+
+        if filtered_total == 0:
+            return set()
+
+        pct_threshold = max(2, int(filtered_total * max_degree_pct))
+        threshold = min(pct_threshold, min_degree_floor)
+        return {
+            node for node, count in filtered_counts.items()
+            if count > threshold
+        }
+
     # ---- removal -----------------------------------------------------------
 
     def remove_edges_by_file(self, source_path: str) -> int:
