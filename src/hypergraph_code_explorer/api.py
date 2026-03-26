@@ -17,6 +17,7 @@ from pathlib import Path
 from .graph.builder import HypergraphBuilder
 from .memory_tours import (
     MemoryTour,
+    MemoryTourStep,
     MemoryTourStore,
     scaffold_from_plan,
     scaffold_prompt,
@@ -155,6 +156,61 @@ class HypergraphSession:
                 )
             self._tour_store = MemoryTourStore(self._cache_dir)
         return self._tour_store
+
+    # ---- Active tour management ------------------------------------------
+
+    def start_tour(self, name: str, *, tags: list[str] | None = None) -> MemoryTour:
+        """Create a new empty tour and set it as the active investigation tour."""
+        store = self._get_tour_store()
+        tour = MemoryTour(
+            id="",  # auto-generated
+            name=name,
+            summary=f"Investigation: {name}",
+            tags=tags or [],
+        )
+        store.add(tour)
+        store.set_active_tour(tour.id)
+        return tour
+
+    def stop_tour(self) -> MemoryTour | None:
+        """Stop the active tour. Returns the stopped tour, or None."""
+        store = self._get_tour_store()
+        tour_id = store.get_active_tour_id()
+        if not tour_id:
+            return None
+        tour = store.get(tour_id)
+        store.clear_active_tour()
+        return tour
+
+    def resume_tour(self, tour_id: str) -> MemoryTour | None:
+        """Resume an existing tour as the active tour."""
+        store = self._get_tour_store()
+        tour = store.get(tour_id)
+        if tour is None:
+            return None
+        store.set_active_tour(tour_id)
+        return tour
+
+    def get_active_tour(self) -> MemoryTour | None:
+        """Return the active tour, or None."""
+        store = self._get_tour_store()
+        tour_id = store.get_active_tour_id()
+        if not tour_id:
+            return None
+        return store.get(tour_id)
+
+    def append_to_active_tour(
+        self, steps: list[MemoryTourStep],
+    ) -> tuple[int, int] | None:
+        """Append steps to the active tour with deduplication.
+
+        Returns (added, skipped) or None if no active tour.
+        """
+        store = self._get_tour_store()
+        tour_id = store.get_active_tour_id()
+        if not tour_id:
+            return None
+        return store.append_steps(tour_id, steps)
 
     def memory_tour_create(
         self,

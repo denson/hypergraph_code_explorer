@@ -44,24 +44,42 @@ you do after evaluating the probe results.
 
     # User asks: "How do random forests work in scikit-learn?"
 
+    # Start an investigation tour — all queries auto-accumulate
+    hce tour start "Random Forest Architecture"
+    # → Started tour abc123: "Random Forest Architecture"
+
     # Step 1: Find the key symbol directly
     hce lookup RandomForestClassifier --calls --depth 2
+    # → Tour abc123: +5 steps (total: 5)
 
     # Step 2: Trace the inheritance chain
     hce lookup RandomForestClassifier --inherits
+    # → Tour abc123: +3 steps (total: 8)
 
     # Step 3: What does fit() actually call?
     hce lookup RandomForestClassifier.fit --calls --depth 2
+    # → Tour abc123: +8 steps, skipped 2 duplicates (total: 16)
 
     # Step 4: Find the tree-building machinery
     hce search "BaseForest"
+    # → Tour abc123: +1 step (total: 17)
     hce lookup BaseForest.fit --calls
+    # → Tour abc123: +4 steps (total: 21)
 
-    # Step 5: Optionally probe for broader context
+    # Step 5: Quick check without polluting the tour
+    hce search "some_noise_term" --no-tour
+
+    # Step 6: Optionally probe for broader context (appends to active tour)
     hce probe "random forest ensemble methods"
+    # → Tour abc123: +12 steps, skipped 5 duplicates (total: 33)
 
-    # Step 6: Annotate weak results, keep strong ones
+    # Step 7: Annotate weak results, stop the tour, export
     hce tour annotate <tour-id> --status weak --finding "noise from text matching"
+    hce tour stop
+    hce tour export --all --output investigation.json
+
+    # Optionally generate a visualization
+    hce visualize --output random_forest
 
 ### Bad investigation (what NOT to do)
 
@@ -82,6 +100,9 @@ you do after evaluating the probe results.
 - `hce lookup <symbol> [--callers] [--calls] [--inherits] [--raises] [--depth N]` — exact structural lookup. Returns edges and connected nodes.
 - `hce probe "<question>"` — rule-based single-query probe. Classifies question, runs multiple lookups, builds a tour. Useful as a starting point but often noisy — treat its output as a first draft, not a final answer.
 - `hce stats` — graph statistics and hub nodes.
+- `hce tour start "<name>"` — start a new investigation tour. All subsequent lookup/search/probe results auto-append.
+- `hce tour stop` — stop the active tour.
+- `hce tour resume <id>` — resume an existing tour as active.
 - `hce tour list` — list all memory tours.
 - `hce tour annotate <id> --finding "<text>" --status <active|empty|weak|hidden>` — annotate a tour with your interpretation.
 - `hce tour export --all --output <file>` — export tours for cross-session transfer.

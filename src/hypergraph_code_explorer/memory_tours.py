@@ -21,6 +21,7 @@ from pathlib import Path
 
 
 SIDECAR_FILENAME = "memory_tours.json"
+ACTIVE_TOUR_FILENAME = "active_tour.json"
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +255,71 @@ class MemoryTourStore:
 
     def __len__(self) -> int:
         return len(self._tours)
+
+    # ---- Active tour management ----------------------------------------
+
+    def get_active_tour_id(self) -> str | None:
+        """Return the active tour ID, or None if no tour is active."""
+        active_path = self._cache_dir / ACTIVE_TOUR_FILENAME
+        if not active_path.exists():
+            return None
+        try:
+            data = json.loads(active_path.read_text(encoding="utf-8"))
+            tour_id = data.get("active_tour_id")
+            # Validate the tour still exists
+            if tour_id and tour_id in self._tours:
+                return tour_id
+            return None
+        except (json.JSONDecodeError, KeyError):
+            return None
+
+    def set_active_tour(self, tour_id: str) -> None:
+        """Set a tour as the active investigation tour."""
+        if tour_id not in self._tours:
+            raise ValueError(f"Tour '{tour_id}' not found")
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        active_path = self._cache_dir / ACTIVE_TOUR_FILENAME
+        active_path.write_text(
+            json.dumps({"active_tour_id": tour_id}, indent=2),
+            encoding="utf-8",
+        )
+
+    def clear_active_tour(self) -> None:
+        """Clear the active tour (stop recording)."""
+        active_path = self._cache_dir / ACTIVE_TOUR_FILENAME
+        if active_path.exists():
+            active_path.unlink()
+
+    def append_steps(
+        self,
+        tour_id: str,
+        steps: list[MemoryTourStep],
+    ) -> tuple[int, int]:
+        """Append steps to a tour, deduplicating by node name.
+
+        Returns:
+            (added, skipped) counts.
+        """
+        tour = self._tours.get(tour_id)
+        if tour is None:
+            raise ValueError(f"Tour '{tour_id}' not found")
+
+        existing_nodes = {s.node for s in tour.steps}
+        added = 0
+        skipped = 0
+        for step in steps:
+            if step.node in existing_nodes:
+                skipped += 1
+            else:
+                existing_nodes.add(step.node)
+                tour.steps.append(step)
+                added += 1
+
+        if added:
+            tour.step_count = len(tour.steps)
+            self.save()
+
+        return added, skipped
 
 
 # ---------------------------------------------------------------------------

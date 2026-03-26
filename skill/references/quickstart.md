@@ -131,9 +131,32 @@ Each `hce probe` call classifies your question, runs structural queries, and bui
 memory tour from the results. A probe is ONE step in an investigation — for full
 investigations, combine probes with targeted `hce lookup` and `hce search` calls.
 
+### Investigation tours
+```bash
+# Start a tour — all subsequent lookup/search/probe results auto-append
+hce tour start "My Investigation"
+# → Started tour abc123: "My Investigation"
+
+hce lookup SomeClass --callers --depth 2
+# → Tour abc123: +5 steps (total: 5)
+
+hce search "validation"
+# → Tour abc123: +3 steps (total: 8)
+
+# Quick lookup without polluting the tour
+hce lookup NoisySymbol --no-tour
+
+# Stop when done
+hce tour stop
+# → Stopped tour abc123: "My Investigation" (8 steps)
+
+# Resume later
+hce tour resume abc123
+```
+
 ### Manage memory tours
 ```bash
-hce tour list                                    # see all tours
+hce tour list                                    # see all tours (active tour marked ◀)
 hce tour show <id>                               # inspect a specific tour
 hce tour annotate <id> --status weak --finding "Only text matches, no structural edges"
 hce tour export --all --output investigation.json # save for later
@@ -142,8 +165,6 @@ hce tour import investigation.json               # resume a previous investigati
 
 Tour status values: `active` (shown in visualization), `empty` (no results),
 `weak` (low quality), `hidden` (excluded). Only `active` tours render in the visualization.
-
-These commands were implemented in commit `7ae22f7`.
 
 ### Codebase overview
 ```b

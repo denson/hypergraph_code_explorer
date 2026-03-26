@@ -74,10 +74,20 @@ For deeper queries, use the CLI (available as `hce` in this project):
   Use when you know exactly which symbol you're changing.
 
 ### Investigation Workflow
-  Build up evidence with multiple probe calls — tours accumulate:
-    hce probe "what classes inherit from SelectorMixin"
-    hce probe "how does SelectKBest.fit work"
-    hce probe "what calls _get_support_mask"
+  Start an investigation tour — all subsequent queries auto-accumulate:
+    hce tour start "My Investigation"
+
+  Every lookup/search/probe automatically appends to the active tour:
+    hce lookup Symbol --callers --depth 2   # → Tour abc123: +5 steps (total: 5)
+    hce search "pattern"                    # → Tour abc123: +3 steps (total: 8)
+    hce probe "broader question"            # → Tour abc123: +12 steps (total: 20)
+
+  Quick query without polluting the tour:
+    hce lookup NoisySymbol --no-tour
+
+  Stop when done, resume later:
+    hce tour stop
+    hce tour resume <tour-id>
 
   Mark weak/empty results so they don't clutter the visualization:
     hce tour annotate <tour-id> --status weak --finding "Only 2 steps, not useful"
@@ -123,9 +133,14 @@ When investigating code relationships, use the terminal:
   hce query "question"             # natural language query
   hce blast-radius <symbol>        # impact analysis
 
-Investigation workflow — tours accumulate across multiple probe calls:
-  hce probe "what inherits from X"    # first query
-  hce probe "what calls Y"            # accumulates
+Investigation workflow — start a tour, all queries auto-accumulate:
+  hce tour start "My Investigation"     # start recording
+  hce lookup X --callers --depth 2      # auto-appends to active tour
+  hce search "pattern"                  # auto-appends
+  hce probe "broader question"          # auto-appends
+  hce lookup Y --no-tour               # skip this one
+  hce tour stop                         # stop recording
+  hce tour resume <id>                  # resume later
   hce tour annotate <id> --status weak  # mark weak results
   hce tour export --all -o results.json # save for later
   hce tour import results.json          # resume
@@ -151,9 +166,14 @@ Use the `hce` CLI for structural queries:
   hce blast-radius <symbol>                # impact analysis
   hce overview                             # module summary
 
-Investigation workflow — tours accumulate across probe calls:
-  hce probe "query 1"                   # first tour
-  hce probe "query 2"                   # accumulates
+Investigation workflow — start a tour, all queries auto-accumulate:
+  hce tour start "My Investigation"       # start recording
+  hce lookup X --callers --depth 2        # auto-appends
+  hce search "pattern"                    # auto-appends
+  hce probe "broader question"            # auto-appends
+  hce lookup Y --no-tour                 # skip this one
+  hce tour stop                           # stop recording
+  hce tour resume <id>                    # resume later
   hce tour annotate <id> --status weak    # mark weak results
   hce tour export --all -o results.json   # save
   hce tour import results.json            # resume

@@ -1,7 +1,7 @@
 """
 CLI Interface
 =============
-Subcommands: index, lookup, search, query, overview, init, embed, stats, tour, probe, blast-radius, visualize, server.
+Subcommands: index, lookup, search, query, overview, init, embed, stats, tour (start/stop/resume/list/...), probe, blast-radius, visualize, server.
 """
 
 from __future__ import annotations
@@ -72,6 +72,8 @@ def main():
     lookup_p.add_argument("--json", action="store_true", dest="json_output",
                           help="Output as JSON")
     lookup_p.add_argument("--cache-dir", type=str, default=None)
+    lookup_p.add_argument("--no-tour", action="store_true",
+        help="Don't append results to the active investigation tour")
     lookup_p.add_argument("--verbose", "-v", action="store_true")
 
     # ---- search ----
@@ -83,6 +85,8 @@ def main():
                           help="Filter by edge type (CALLS, IMPORTS, etc.)")
     search_p.add_argument("--json", action="store_true", dest="json_output")
     search_p.add_argument("--cache-dir", type=str, default=None)
+    search_p.add_argument("--no-tour", action="store_true",
+        help="Don't append results to the active investigation tour")
     search_p.add_argument("--verbose", "-v", action="store_true")
 
     # ---- query ----
@@ -128,6 +132,24 @@ def main():
     tour_p = subparsers.add_parser("tour",
         help="Memory tours — persistent agent-facing architectural notes")
     tour_sub = tour_p.add_subparsers(dest="tour_command", required=True)
+
+    tour_start_p = tour_sub.add_parser("start",
+        help="Start a new investigation tour — all subsequent lookup/search results append to it")
+    tour_start_p.add_argument("name", type=str,
+        help="Name for the investigation tour")
+    tour_start_p.add_argument("--tag", type=str, action="append", default=[],
+        dest="tags", help="Add a tag (repeatable)")
+    tour_start_p.add_argument("--cache-dir", type=str, default=None)
+
+    tour_stop_p = tour_sub.add_parser("stop",
+        help="Stop the active investigation tour")
+    tour_stop_p.add_argument("--cache-dir", type=str, default=None)
+
+    tour_resume_p = tour_sub.add_parser("resume",
+        help="Resume an existing tour as the active investigation tour")
+    tour_resume_p.add_argument("tour_id", type=str,
+        help="ID of the tour to resume")
+    tour_resume_p.add_argument("--cache-dir", type=str, default=None)
 
     tour_list_p = tour_sub.add_parser("list", help="List memory tours")
     tour_list_p.add_argument("--tag", type=str, default=None,
@@ -359,6 +381,62 @@ def _load_builder(cache_dir: str | None):
 
 
 # ---------------------------------------------------------------------------
+# Helpers: active tour auto-append
+# ---------------------------------------------------------------------------
+
+def _plan_to_tour_steps(plan, context_query: str = "") -> list:
+    """Convert a RetrievalPlan's related_symbols into MemoryTourSteps."""
+    from .memory_tours import MemoryTourStep
+
+    steps: list[MemoryTourStep] = []
+    for sym in plan.related_symbols:
+        text = sym.name
+        if sym.relationship:
+            text += f" [{sym.relationship}]"
+        if sym.targets:
+            text += " -> " + ", ".join(sym.targets)
+        steps.append(MemoryTourStep(
+            node=sym.name,
+            text=text,
+            file=sym.file,
+            edge_type=sym.edge_type,
+            context_query=context_query,
+        ))
+    return steps
+
+
+def _maybe_append_to_active_tour(
+    cache_dir: Path,
+    steps: list,
+    *,
+    no_tour: bool = False,
+) -> None:
+    """Append steps to the active tour if one exists and --no-tour is not set."""
+    if no_tour or not steps:
+        return
+
+    from .memory_tours import MemoryTourStore
+
+    store = MemoryTourStore(cache_dir)
+    tour_id = store.get_active_tour_id()
+    if not tour_id:
+        return
+
+    added, skipped = store.append_steps(tour_id, steps)
+    tour = store.get(tour_id)
+    total = len(tour.steps) if tour else 0
+
+    parts: list[str] = []
+    if added:
+        parts.append(f"+{added} steps")
+    if skipped:
+        parts.append(f"skipped {skipped} duplicates")
+    parts.append(f"total: {total}")
+
+    print(f"\u2192 Tour {tour_id}: {', '.join(parts)}")
+
+
+# ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
 
@@ -492,6 +570,17 @@ def _run_lookup(args):
     else:
         print(format_text(plan))
 
+    # Auto-append to active tour
+    if not plan.is_empty():
+        cmd = f"hce lookup {args.symbol}"
+        if edge_types:
+            cmd += f" --{' --'.join(f.lower() for f in edge_types)}"
+        steps = _plan_to_tour_steps(plan, context_query=cmd)
+        cache_dir = _resolve_cache_dir(args.cache_dir)
+        _maybe_append_to_active_tour(
+            cache_dir, steps, no_tour=getattr(args, "no_tour", False),
+        )
+
 
 def _run_search(args):
     builder = _load_builder(args.cache_dir)
@@ -505,6 +594,14 @@ def _run_search(args):
         print(format_json(plan))
     else:
         print(format_text(plan))
+
+    # Auto-append to active tour
+    if not plan.is_empty():
+        steps = _plan_to_tour_steps(plan, context_query=f"hce search {args.term}")
+        cache_dir = _resolve_cache_dir(args.cache_dir)
+        _maybe_append_to_active_tour(
+            cache_dir, steps, no_tour=getattr(args, "no_tour", False),
+        )
 
 
 def _run_query(args):
@@ -637,14 +734,48 @@ def _run_stats(args):
 
 
 def _run_tour(args):
-    from .memory_tours import MemoryTourStore
+    from .memory_tours import MemoryTour, MemoryTourStore
 
     cache_dir = _resolve_cache_dir(args.cache_dir)
     store = MemoryTourStore(cache_dir)
 
     sub = args.tour_command
 
-    if sub == "list":
+    if sub == "start":
+        tour = MemoryTour(
+            id="",  # auto-generated
+            name=args.name,
+            summary=f"Investigation: {args.name}",
+            tags=args.tags if hasattr(args, "tags") else [],
+        )
+        store.add(tour)
+        store.set_active_tour(tour.id)
+        print(f"Started tour {tour.id}: \"{tour.name}\"")
+        print("All subsequent lookup/search results will be added to this tour.")
+        return
+
+    elif sub == "stop":
+        tour_id = store.get_active_tour_id()
+        if not tour_id:
+            print("No active tour.", file=sys.stderr)
+            return
+        tour = store.get(tour_id)
+        store.clear_active_tour()
+        name = tour.name if tour else "?"
+        steps = len(tour.steps) if tour else 0
+        print(f"Stopped tour {tour_id}: \"{name}\" ({steps} steps)")
+        return
+
+    elif sub == "resume":
+        tour = store.get(args.tour_id)
+        if tour is None:
+            print(f"Error: tour '{args.tour_id}' not found.", file=sys.stderr)
+            sys.exit(1)
+        store.set_active_tour(args.tour_id)
+        print(f"Resumed tour {args.tour_id}: \"{tour.name}\" ({len(tour.steps)} steps)")
+        return
+
+    elif sub == "list":
         tours = store.list_tours(
             tag=args.tag, promoted_only=args.promoted,
             status=getattr(args, "status", None),
@@ -655,12 +786,14 @@ def _run_tour(args):
             if not tours:
                 print("No memory tours found.")
                 return
+            active_id = store.get_active_tour_id()
             print(f"=== Memory Tours ({len(tours)}) ===")
             for t in tours:
                 promoted = " [promoted]" if t.promoted else ""
                 status_str = f" [{t.status}]" if t.status != "active" else ""
+                active_str = " \u25c0 ACTIVE" if t.id == active_id else ""
                 tags = f"  tags: {', '.join(t.tags)}" if t.tags else ""
-                print(f"  {t.id}  {t.name}{promoted}{status_str}{tags}")
+                print(f"  {t.id}  {t.name}{promoted}{status_str}{active_str}{tags}")
                 print(f"         {t.summary}")
                 if t.finding:
                     print(f"         finding: {t.finding}")
@@ -827,6 +960,9 @@ def _run_probe(args):
     if args.strategy:
         strategies = [s.strip() for s in args.strategy.split(",")]
 
+    # Check for active tour — if one exists, probe appends to it
+    active_tour = session.get_active_tour()
+
     tour = session.probe(
         args.question,
         depth=args.depth,
@@ -834,6 +970,24 @@ def _run_probe(args):
         tags=strategies,
         strategies=strategies,
     )
+
+    # If an active tour exists, append probe steps to it and remove the standalone tour
+    if active_tour and tour.steps:
+        store = session._get_tour_store()
+        added, skipped = store.append_steps(active_tour.id, tour.steps)
+        # Remove the standalone probe tour since its steps are now in the active tour
+        store.remove(tour.id)
+        updated_tour = store.get(active_tour.id)
+        total = len(updated_tour.steps) if updated_tour else 0
+        parts: list[str] = []
+        if added:
+            parts.append(f"+{added} steps")
+        if skipped:
+            parts.append(f"skipped {skipped} duplicates")
+        parts.append(f"total: {total}")
+        print(f"\u2192 Tour {active_tour.id}: {', '.join(parts)}")
+        # Use the active tour for visualization below
+        tour = updated_tour if updated_tour else tour
 
     # Override status if specified
     if args.status:
