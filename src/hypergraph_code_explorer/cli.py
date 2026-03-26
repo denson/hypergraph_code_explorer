@@ -74,6 +74,8 @@ def main():
     lookup_p.add_argument("--cache-dir", type=str, default=None)
     lookup_p.add_argument("--no-tour", action="store_true",
         help="Don't append results to the active investigation tour")
+    lookup_p.add_argument("--no-tests", action="store_true",
+        help="Filter out test/benchmark/example file references from results")
     lookup_p.add_argument("--verbose", "-v", action="store_true")
 
     # ---- search ----
@@ -87,6 +89,8 @@ def main():
     search_p.add_argument("--cache-dir", type=str, default=None)
     search_p.add_argument("--no-tour", action="store_true",
         help="Don't append results to the active investigation tour")
+    search_p.add_argument("--no-tests", action="store_true",
+        help="Filter out test/benchmark/example file references from results")
     search_p.add_argument("--verbose", "-v", action="store_true")
 
     # ---- query ----
@@ -273,6 +277,8 @@ def main():
         help="Tour ID this query follows up on (links related investigations)")
     probe_p.add_argument("--no-viz", action="store_true",
         help="Skip visualization generation")
+    probe_p.add_argument("--no-tests", action="store_true",
+        help="Filter out test/benchmark/example file steps from results")
     probe_p.add_argument("--cache-dir", type=str, default=None)
     probe_p.add_argument("--verbose", "-v", action="store_true")
 
@@ -437,6 +443,41 @@ def _maybe_append_to_active_tour(
 
 
 # ---------------------------------------------------------------------------
+# Helpers: test file filtering
+# ---------------------------------------------------------------------------
+
+def _filter_plan_test_files(plan):
+    """Remove test/benchmark/example file entries from a RetrievalPlan.
+
+    Returns (plan, filtered_count) — mutates the plan in place.
+    """
+    from .filters import is_test_file
+
+    filtered = 0
+
+    # Filter primary_files
+    orig_files = len(plan.primary_files)
+    plan.primary_files = [f for f in plan.primary_files if not is_test_file(f.path)]
+    filtered += orig_files - len(plan.primary_files)
+
+    # Filter related_symbols where the source file is a test file
+    orig_syms = len(plan.related_symbols)
+    plan.related_symbols = [
+        s for s in plan.related_symbols if not (s.file and is_test_file(s.file))
+    ]
+    filtered += orig_syms - len(plan.related_symbols)
+
+    # Filter grep suggestions scoped to test dirs
+    orig_greps = len(plan.grep_suggestions)
+    plan.grep_suggestions = [
+        g for g in plan.grep_suggestions if not (g.scope and is_test_file(g.scope))
+    ]
+    filtered += orig_greps - len(plan.grep_suggestions)
+
+    return plan, filtered
+
+
+# ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
 
@@ -565,10 +606,17 @@ def _run_lookup(args):
         )
         plan.merge(t2)
 
+    # Filter test files if requested
+    if args.no_tests:
+        plan, filtered_count = _filter_plan_test_files(plan)
+
     if args.json_output:
         print(format_json(plan))
     else:
         print(format_text(plan))
+        if args.no_tests and filtered_count > 0:
+            print(f"(filtered {filtered_count} test file references,"
+                  " use without --no-tests to include)")
 
     # Auto-append to active tour
     if not plan.is_empty():
@@ -590,10 +638,17 @@ def _run_search(args):
 
     plan = text_search(args.term, builder)
 
+    # Filter test files if requested
+    if args.no_tests:
+        plan, filtered_count = _filter_plan_test_files(plan)
+
     if args.json_output:
         print(format_json(plan))
     else:
         print(format_text(plan))
+        if args.no_tests and filtered_count > 0:
+            print(f"(filtered {filtered_count} test file references,"
+                  " use without --no-tests to include)")
 
     # Auto-append to active tour
     if not plan.is_empty():
@@ -1025,17 +1080,26 @@ def _run_probe(args):
                 print(f"  HTML: {result['html']}")
         return
 
-    # Top steps
+    # Top steps (optionally filter test files from display)
+    display_steps = tour.steps
+    test_filtered = 0
+    if getattr(args, "no_tests", False):
+        from .filters import is_test_file
+        display_steps = [s for s in tour.steps if not (s.file and is_test_file(s.file))]
+        test_filtered = len(tour.steps) - len(display_steps)
+
     print('\n  Top steps:')
-    for i, step in enumerate(tour.steps[:10], 1):
+    for i, step in enumerate(display_steps[:10], 1):
         edge = str(step.edge_type).replace("EdgeType.", "") if step.edge_type else ""
         fname = Path(step.file).name if step.file else ""
         label = f"[{edge}] " if edge else ""
         target = f" -> {fname}" if fname else ""
         print(f'    {i}. {step.node} {label}{target}')
-    remaining = len(tour.steps) - 10
+    remaining = len(display_steps) - 10
     if remaining > 0:
         print(f'    ... ({remaining} more)')
+    if test_filtered > 0:
+        print(f'    ({test_filtered} test-file steps filtered)')
 
     # Write analysis prompt
     prompt = generate_analysis_prompt(tour, task_description=args.question)
