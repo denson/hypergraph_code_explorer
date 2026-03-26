@@ -1,7 +1,7 @@
 """
 CLI Interface
 =============
-Subcommands: index, lookup, search, query, overview, init, embed, stats, tour, visualize, server.
+Subcommands: index, lookup, search, query, overview, init, embed, stats, tour, analyze, blast-radius, visualize, server.
 """
 
 from __future__ import annotations
@@ -30,10 +30,10 @@ def main():
         "  - Tracing a call chain forward (just read the code — it's right there)\n"
         "  - Searching for a string or pattern (use grep)\n"
         "  - Reading a specific file (use cat/read)\n\n"
-        "TYPICAL WORKFLOW FOR IMPACT ANALYSIS:\n"
-        "  1. hce lookup Symbol --callers --depth 2  (who depends on this?)\n"
-        "  2. hce lookup Symbol --inherits            (what overrides this?)\n"
-        "  3. hce overview --top 20                   (is this a hub node?)\n"
+        "TYPICAL WORKFLOW:\n"
+        "  1. hce analyze 'your question'               (guided tour + visualization)\n"
+        "  2. hce lookup Symbol --callers --depth 2      (targeted reverse lookup)\n"
+        "  3. hce blast-radius Symbol --task 'desc'      (impact analysis)\n"
         "  4. Read the specific files identified to understand the dependency",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -171,6 +171,46 @@ def main():
         help="Query to run; the result is turned into an LLM prompt")
     tour_scaffold_p.add_argument("--cache-dir", type=str, default=None)
 
+    # ---- analyze ----
+    analyze_p = subparsers.add_parser("analyze",
+        help="Analyze a codebase from a plain-English question",
+        description="Analyze a codebase from a plain-English question. "
+            "Decomposes the question into multiple structural queries, "
+            "builds a tour of relevant code, and generates an interactive "
+            "visualization + analysis prompt.\n\n"
+            "EXAMPLES:\n"
+            '  hce analyze "how does random forest handle missing values"\n'
+            '  hce analyze "trace the Pipeline.fit execution path"\n'
+            '  hce analyze "what validates input data before fitting"\n'
+            '  hce analyze "exception handling in the forms module"\n'
+            '  hce analyze "what would break if I changed BaseEstimator.get_params"\n\n'
+            "STRATEGIES (auto-detected from your question):\n"
+            "  blast-radius  -- impact analysis\n"
+            "  inheritance   -- class hierarchy\n"
+            "  data-flow     -- execution paths\n"
+            "  exception-flow -- error handling\n"
+            "  api-surface   -- public interface\n"
+            "  cross-cutting -- patterns across codebase\n"
+            "  exploration   -- general (default fallback)",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    analyze_p.add_argument("question", type=str,
+        help="Plain-English question about the codebase")
+    analyze_p.add_argument("--depth", type=int, default=2,
+        help="Traversal depth for structural queries (default: 2)")
+    analyze_p.add_argument("--max-steps", type=int, default=200,
+        help="Maximum tour steps (default: 200)")
+    analyze_p.add_argument("--strategy", type=str, default=None,
+        help="Force a specific strategy instead of auto-detecting. "
+             "Comma-separated for multiple: --strategy inheritance,data-flow")
+    analyze_p.add_argument("--hops", type=int, default=0,
+        help="Maximum hops from tour nodes for fog-of-war (default: 0 = unlimited)")
+    analyze_p.add_argument("--max-svg", type=int, default=500,
+        help="Max SVG nodes in browser focus window (default: 500)")
+    analyze_p.add_argument("--output", "-o", type=str, default="analysis",
+        help="Output basename (default: analysis)")
+    analyze_p.add_argument("--cache-dir", type=str, default=None)
+    analyze_p.add_argument("--verbose", "-v", action="store_true")
+
     # ---- blast-radius ----
     blast_p = subparsers.add_parser("blast-radius",
         help="Generate a tour-guided blast radius analysis for a symbol")
@@ -226,6 +266,7 @@ def main():
         "embed": _run_embed,
         "stats": _run_stats,
         "tour": _run_tour,
+        "analyze": _run_analyze,
         "blast-radius": _run_blast_radius,
         "visualize": _run_visualize,
         "server": _run_server,
@@ -651,6 +692,60 @@ def _run_tour(args):
         existing = [t.name for t in store.list_tours()]
         prompt = scaffold_prompt(plan, existing_tour_names=existing)
         print(prompt)
+
+
+def _run_analyze(args):
+    from .api import HypergraphSession
+    from .memory_tours import generate_analysis_prompt
+
+    cache_dir = _resolve_cache_dir(args.cache_dir)
+    session = HypergraphSession.load(cache_dir)
+
+    # Override strategies if specified
+    strategies = None
+    if args.strategy:
+        strategies = [s.strip() for s in args.strategy.split(",")]
+
+    tour = session.analyze(
+        args.question,
+        depth=args.depth,
+        max_tour_steps=args.max_steps,
+        tags=strategies,
+        strategies=strategies,
+    )
+
+    print(f"Analysis tour: {tour.name}")
+    print(f"  ID: {tour.id}")
+    print(f"  Steps: {len(tour.steps)}")
+    print(f"  Strategies: {', '.join(tour.tags)}")
+    print(f"  Keywords: {', '.join(tour.keywords[:10])}")
+
+    if not tour.steps:
+        print("  No relevant symbols found. Try different terms or check "
+              "that the codebase is indexed.")
+        return
+
+    # Write analysis prompt
+    prompt = generate_analysis_prompt(tour, task_description=args.question)
+    prompt_path = Path(args.output + "_prompt.md")
+    prompt_path.write_text(prompt, encoding="utf-8")
+    print(f"  Prompt: {prompt_path}")
+
+    # Generate visualization
+    result = session.visualize(
+        tour_ids=[tour.id], output=args.output,
+        max_neighborhood_hops=args.hops,
+        max_svg=args.max_svg,
+    )
+    node_msg = f"{result['nodes']} nodes, {result['edges']} edges"
+    if result.get("fog_tour_nodes"):
+        node_msg += (
+            f" (fog: {result['fog_tour_nodes']} tour, "
+            f"~{result['fog_near']} near, ~{result['fog_far']} in fog)"
+        )
+    print(f"  HTML: {result['html']}  ({node_msg})")
+    if result.get("md"):
+        print(f"  Report: {result['md']}")
 
 
 def _run_blast_radius(args):

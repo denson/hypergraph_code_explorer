@@ -211,6 +211,32 @@ class HypergraphSession:
         ]
         return scaffold_prompt(plan, existing_tour_names=existing)
 
+    # ---- Analyze (general-purpose tour-guided analysis) --------------------
+
+    def analyze(
+        self,
+        question: str,
+        *,
+        depth: int = 2,
+        max_tour_steps: int = 200,
+        tags: list[str] | None = None,
+        strategies: list[str] | None = None,
+    ) -> MemoryTour:
+        """General-purpose tour-guided analysis from a plain-English question.
+
+        Unlike blast_radius() which is anchored to a single symbol's BFS
+        neighborhood, analyze() decomposes the question into multiple queries,
+        merges the results, and builds a tour covering all relevant code.
+        """
+        from .analyze import analyze as run_analyze
+        return run_analyze(
+            question, self,
+            depth=depth,
+            max_tour_steps=max_tour_steps,
+            tags=tags,
+            strategies=strategies,
+        )
+
     # ---- Blast radius analysis -------------------------------------------
 
     def blast_radius(

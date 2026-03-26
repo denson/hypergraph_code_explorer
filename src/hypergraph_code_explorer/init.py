@@ -23,14 +23,55 @@ understand the project or find where something lives.
 
 For deeper queries, use the CLI (available as `hce` in this project):
 
+### Quick Reference
   hce lookup <symbol>              # where is it defined? what edges touch it?
-  hce lookup <symbol> --calls      # what does it call?
-  hce lookup <symbol> --callers    # what calls it?
+  hce lookup <symbol> --callers    # what calls it? (reverse call graph)
   hce lookup <symbol> --inherits   # class hierarchy
   hce lookup <symbol> --depth 2    # follow relationships 2 hops
   hce search <term>                # text search across all symbols
   hce query "natural language"     # full dispatch query
-  hce overview                     # module summary + reading order
+  hce overview                     # module summary + hub nodes
+
+### Analyze — Tour-Guided Codebase Analysis
+  hce analyze "your question here"
+
+  Use `analyze` when you need to **understand** a part of the codebase,
+  not just find a symbol. It decomposes your question into multiple
+  structural queries, builds a guided tour of relevant code, and
+  generates an interactive visualization.
+
+  Examples — be specific and descriptive for best results:
+    hce analyze "how does authentication middleware validate tokens"
+    hce analyze "trace the request lifecycle from Router to Response"
+    hce analyze "what would break if I changed BaseModel.validate"
+    hce analyze "exception handling patterns in the payment module"
+    hce analyze "all places that validate user input before database writes"
+    hce analyze "how does the caching layer interact with the ORM"
+
+  Strategies (auto-detected from your question):
+    blast-radius   — impact of changing a symbol (who depends on it?)
+    inheritance    — class hierarchies and overrides
+    data-flow      — trace execution paths and data transformations
+    exception-flow — how errors are raised, caught, and propagated
+    api-surface    — public interface of a module
+    cross-cutting  — patterns that appear across many files
+
+  Output: interactive D3 visualization (.html) + analysis prompt (.md)
+
+  Tips for constructing good queries:
+    - Name specific symbols when you know them: "how does Session.commit
+      interact with the connection pool" > "how does committing work"
+    - Mention the module/area to focus the search: "validation in the
+      forms module" > "validation"
+    - Ask about relationships: "what calls X", "what inherits from Y",
+      "how does X reach Y"
+    - For impact analysis: "what would break if I changed X"
+
+### Blast Radius — Single-Symbol Impact Analysis
+  hce blast-radius <symbol> --depth 2 --task "description"
+
+  Specialized version of analyze for impact analysis of a specific symbol.
+  Use when you know exactly which symbol you're changing.
 
 Output is human-readable text by default. Add --json for structured
 output when you need to parse the results programmatically.
@@ -50,10 +91,12 @@ Read `.hce/CODEBASE_MAP.md` for a structural overview.
 
 When investigating code relationships, use the terminal:
 
-  hce lookup <symbol> --calls      # call graph
+  hce analyze "your question"      # tour-guided analysis + visualization
+  hce lookup <symbol> --callers    # reverse call graph
   hce lookup <symbol> --inherits   # class hierarchy
   hce search <term>                # find symbols by name
   hce query "question"             # natural language query
+  hce blast-radius <symbol>        # impact analysis
 
 Output is human-readable by default. Add --json for structured output.
 The CLI returns file paths, related symbols, and grep patterns.
@@ -69,10 +112,12 @@ Read it for an overview of modules, key symbols, and relationships.
 
 Use the `hce` CLI for structural queries:
 
-  hce lookup <symbol> --calls --depth 2
-  hce search <term>
-  hce query "natural language question"
-  hce overview
+  hce analyze "your question"             # tour-guided analysis + viz
+  hce lookup <symbol> --callers --depth 2  # reverse dependencies
+  hce search <term>                        # find symbols by name
+  hce query "natural language question"    # dispatch query
+  hce blast-radius <symbol>                # impact analysis
+  hce overview                             # module summary
 
 Output is human-readable by default. Add --json for structured output.
 Returns file paths, related symbols, and grep patterns."""
