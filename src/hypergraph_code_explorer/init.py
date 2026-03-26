@@ -73,6 +73,31 @@ For deeper queries, use the CLI (available as `hce` in this project):
   Specialized version of analyze for impact analysis of a specific symbol.
   Use when you know exactly which symbol you're changing.
 
+### Investigation Workflow
+  Build up evidence with multiple analyze calls — tours accumulate:
+    hce analyze "what classes inherit from SelectorMixin"
+    hce analyze "how does SelectKBest.fit work"
+    hce analyze "what calls _get_support_mask"
+
+  Mark weak/empty results so they don't clutter the visualization:
+    hce tour annotate <tour-id> --status weak --finding "Only 2 steps, not useful"
+
+  Reference tours by name when explaining answers to the user.
+  The visualization at .hce_cache/visualization.html shows all active tours.
+
+  Save and resume investigations:
+    hce tour export --all --output my_investigation.json
+    hce tour import my_investigation.json
+
+  Start fresh:
+    hce analyze "new question" --clear
+
+  Tour status values:
+    active  — good results, shown in visualization (default)
+    empty   — query returned nothing (important for reasoning, not shown)
+    weak    — too few results to be useful visually (not shown)
+    hidden  — explicitly excluded
+
 Output is human-readable text by default. Add --json for structured
 output when you need to parse the results programmatically.
 
@@ -98,6 +123,13 @@ When investigating code relationships, use the terminal:
   hce query "question"             # natural language query
   hce blast-radius <symbol>        # impact analysis
 
+Investigation workflow — tours accumulate across multiple analyze calls:
+  hce analyze "what inherits from X"    # first query
+  hce analyze "what calls Y"            # accumulates
+  hce tour annotate <id> --status weak  # mark weak results
+  hce tour export --all -o results.json # save for later
+  hce tour import results.json          # resume
+
 Output is human-readable by default. Add --json for structured output.
 The CLI returns file paths, related symbols, and grep patterns.
 Use these to navigate directly to relevant code.
@@ -118,6 +150,14 @@ Use the `hce` CLI for structural queries:
   hce query "natural language question"    # dispatch query
   hce blast-radius <symbol>                # impact analysis
   hce overview                             # module summary
+
+Investigation workflow — tours accumulate across analyze calls:
+  hce analyze "query 1"                   # first tour
+  hce analyze "query 2"                   # accumulates
+  hce tour annotate <id> --status weak    # mark weak results
+  hce tour export --all -o results.json   # save
+  hce tour import results.json            # resume
+  hce analyze "query" --clear             # start fresh
 
 Output is human-readable by default. Add --json for structured output.
 Returns file paths, related symbols, and grep patterns."""

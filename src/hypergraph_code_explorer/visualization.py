@@ -60,8 +60,11 @@ def select_tours(
 
     If ``tour_ids`` is provided it takes precedence over ``tags``.
     If neither is provided, all tours are returned.
+    Only tours with status "active" are included (unless explicitly
+    selected by ID).
     """
     if tour_ids:
+        # Explicit ID selection bypasses status filtering
         tours = []
         for tid in tour_ids:
             t = store.get(tid)
@@ -74,12 +77,12 @@ def select_tours(
         seen: set[str] = set()
         for tag in tags:
             for t in store.list_tours(tag=tag):
-                if t.id not in seen:
+                if t.id not in seen and t.status == "active":
                     seen.add(t.id)
                     result.append(t)
         return result
 
-    return store.list_tours()
+    return store.list_tours(status="active")
 
 
 # ---------------------------------------------------------------------------

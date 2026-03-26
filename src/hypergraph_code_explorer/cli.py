@@ -134,6 +134,8 @@ def main():
                              help="Filter by tag")
     tour_list_p.add_argument("--promoted", action="store_true",
                              help="Show only promoted tours")
+    tour_list_p.add_argument("--status", type=str, default=None,
+                             help="Filter by status (active, empty, weak, hidden)")
     tour_list_p.add_argument("--json", action="store_true", dest="json_output")
     tour_list_p.add_argument("--cache-dir", type=str, default=None)
 
@@ -170,6 +172,38 @@ def main():
     tour_scaffold_p.add_argument("query", type=str,
         help="Query to run; the result is turned into an LLM prompt")
     tour_scaffold_p.add_argument("--cache-dir", type=str, default=None)
+
+    tour_annotate_p = tour_sub.add_parser("annotate",
+        help="Update a tour's finding or status")
+    tour_annotate_p.add_argument("tour_id", type=str)
+    tour_annotate_p.add_argument("--finding", type=str, default=None,
+        help="Set the tour's finding text")
+    tour_annotate_p.add_argument("--status",
+        choices=["active", "empty", "weak", "hidden"], default=None,
+        help="Set the tour's status")
+    tour_annotate_p.add_argument("--tag", type=str, action="append", default=None,
+        help="Add tags (repeatable)")
+    tour_annotate_p.add_argument("--cache-dir", type=str, default=None)
+
+    tour_export_p = tour_sub.add_parser("export",
+        help="Export tours to a standalone JSON file")
+    tour_export_p.add_argument("tour_ids", nargs="*",
+        help="Specific tour IDs to export (default: all)")
+    tour_export_p.add_argument("--all", action="store_true",
+        help="Export all tours")
+    tour_export_p.add_argument("--status", type=str, default=None,
+        help="Filter by status")
+    tour_export_p.add_argument("--output", "-o", type=str, required=True,
+        help="Output JSON file path")
+    tour_export_p.add_argument("--cache-dir", type=str, default=None)
+
+    tour_import_p = tour_sub.add_parser("import",
+        help="Import tours from a JSON file")
+    tour_import_p.add_argument("file", type=str,
+        help="Path to exported tours JSON")
+    tour_import_p.add_argument("--overwrite", action="store_true",
+        help="Overwrite existing tours with same ID")
+    tour_import_p.add_argument("--cache-dir", type=str, default=None)
 
     # ---- analyze ----
     analyze_p = subparsers.add_parser("analyze",
@@ -208,6 +242,14 @@ def main():
         help="Max SVG nodes in browser focus window (default: 500)")
     analyze_p.add_argument("--output", "-o", type=str, default="analysis",
         help="Output basename (default: analysis)")
+    analyze_p.add_argument("--status", choices=["active", "empty", "weak", "hidden"],
+        default=None, help="Override auto-detected tour status")
+    analyze_p.add_argument("--clear", action="store_true",
+        help="Clear all existing tours before running this analysis")
+    analyze_p.add_argument("--follows", type=str, default=None,
+        help="Tour ID this query follows up on (links related investigations)")
+    analyze_p.add_argument("--no-viz", action="store_true",
+        help="Skip visualization generation")
     analyze_p.add_argument("--cache-dir", type=str, default=None)
     analyze_p.add_argument("--verbose", "-v", action="store_true")
 
@@ -602,7 +644,10 @@ def _run_tour(args):
     sub = args.tour_command
 
     if sub == "list":
-        tours = store.list_tours(tag=args.tag, promoted_only=args.promoted)
+        tours = store.list_tours(
+            tag=args.tag, promoted_only=args.promoted,
+            status=getattr(args, "status", None),
+        )
         if args.json_output:
             print(json.dumps([t.to_dict() for t in tours], indent=2))
         else:
@@ -612,9 +657,12 @@ def _run_tour(args):
             print(f"=== Memory Tours ({len(tours)}) ===")
             for t in tours:
                 promoted = " [promoted]" if t.promoted else ""
+                status_str = f" [{t.status}]" if t.status != "active" else ""
                 tags = f"  tags: {', '.join(t.tags)}" if t.tags else ""
-                print(f"  {t.id}  {t.name}{promoted}{tags}")
+                print(f"  {t.id}  {t.name}{promoted}{status_str}{tags}")
                 print(f"         {t.summary}")
+                if t.finding:
+                    print(f"         finding: {t.finding}")
                 if t.use_count:
                     print(f"         used {t.use_count}x, last: {t.last_used_at}")
             print()
@@ -630,10 +678,17 @@ def _run_tour(args):
         else:
             print(f"Tour: {tour.name}")
             print(f"  ID: {tour.id}")
+            print(f"  Status: {tour.status}")
             print(f"  Summary: {tour.summary}")
+            if tour.strategy:
+                print(f"  Strategy: {tour.strategy}")
+            if tour.finding:
+                print(f"  Finding: {tour.finding}")
             if tour.tags:
                 print(f"  Tags: {', '.join(tour.tags)}")
             print(f"  Promoted: {tour.promoted}")
+            if tour.parent_tour_id:
+                print(f"  Follows: {tour.parent_tour_id}")
             print(f"  Created: {tour.created_at}")
             if tour.created_from_query:
                 print(f"  Query: {tour.created_from_query}")
@@ -693,13 +748,78 @@ def _run_tour(args):
         prompt = scaffold_prompt(plan, existing_tour_names=existing)
         print(prompt)
 
+    elif sub == "annotate":
+        tour = store.get(args.tour_id)
+        if tour is None:
+            print(f"Error: tour '{args.tour_id}' not found.", file=sys.stderr)
+            sys.exit(1)
+        if args.finding is not None:
+            tour.finding = args.finding
+        if args.status is not None:
+            tour.status = args.status
+        if args.tag:
+            tour.tags.extend(args.tag)
+        store.save()
+        print(f"Updated tour {tour.id}: status={tour.status}, "
+              f"finding={'set' if tour.finding else 'unset'}")
+
+    elif sub == "export":
+        from datetime import datetime, timezone
+
+        if args.tour_ids:
+            tours = [store.get(tid) for tid in args.tour_ids]
+            tours = [t for t in tours if t is not None]
+        elif getattr(args, "status", None):
+            tours = store.list_tours(status=args.status)
+        else:
+            tours = store.list_tours()
+
+        payload = {
+            "version": 1,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "source_cache_dir": str(cache_dir),
+            "tours": [t.to_dict() for t in tours],
+        }
+        out_path = Path(args.output)
+        out_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        print(f"Exported {len(tours)} tours to {out_path}")
+
+    elif sub == "import":
+        from .memory_tours import MemoryTour
+
+        import_path = Path(args.file)
+        if not import_path.exists():
+            print(f"Error: file not found: {args.file}", file=sys.stderr)
+            sys.exit(1)
+        raw = json.loads(import_path.read_text(encoding="utf-8"))
+        imported = 0
+        skipped = 0
+        for td in raw.get("tours", []):
+            tour = MemoryTour.from_dict(td)
+            existing = store.get(tour.id)
+            if existing and not args.overwrite:
+                skipped += 1
+                continue
+            store._tours[tour.id] = tour
+            imported += 1
+        store.save()
+        print(f"Imported {imported} tours, skipped {skipped} duplicates")
+
 
 def _run_analyze(args):
     from .api import HypergraphSession
-    from .memory_tours import generate_analysis_prompt
+    from .memory_tours import MemoryTourStore, generate_analysis_prompt
 
     cache_dir = _resolve_cache_dir(args.cache_dir)
     session = HypergraphSession.load(cache_dir)
+
+    # Clear existing tours if requested
+    if args.clear:
+        store = MemoryTourStore(cache_dir)
+        store.clear()
 
     # Override strategies if specified
     strategies = None
@@ -714,15 +834,38 @@ def _run_analyze(args):
         strategies=strategies,
     )
 
-    print(f"Analysis tour: {tour.name}")
-    print(f"  ID: {tour.id}")
-    print(f"  Steps: {len(tour.steps)}")
-    print(f"  Strategies: {', '.join(tour.tags)}")
-    print(f"  Keywords: {', '.join(tour.keywords[:10])}")
+    # Override status if specified
+    if args.status:
+        tour.status = args.status
+        session._get_tour_store().save()
+
+    # Set parent tour linkage
+    if args.follows:
+        tour.parent_tour_id = args.follows
+        session._get_tour_store().save()
+
+    # Count total tours
+    total_tours = len(session._get_tour_store())
+
+    # Machine-readable summary line
+    print(f"Strategy: {tour.strategy} | Steps: {len(tour.steps)} | "
+          f"Status: {tour.status} | Tour: {tour.id} | "
+          f"Total tours: {total_tours}")
 
     if not tour.steps:
         print("  No relevant symbols found. Try different terms or check "
               "that the codebase is indexed.")
+        if not args.no_viz:
+            # Still render viz with all active tours
+            active_tours_list = session._get_tour_store().list_tours(status="active")
+            if active_tours_list:
+                result = session.visualize(
+                    tour_ids=[t.id for t in active_tours_list],
+                    output=args.output,
+                    max_neighborhood_hops=args.hops,
+                    max_svg=args.max_svg,
+                )
+                print(f"  HTML: {result['html']}")
         return
 
     # Write analysis prompt
@@ -731,21 +874,24 @@ def _run_analyze(args):
     prompt_path.write_text(prompt, encoding="utf-8")
     print(f"  Prompt: {prompt_path}")
 
-    # Generate visualization
-    result = session.visualize(
-        tour_ids=[tour.id], output=args.output,
-        max_neighborhood_hops=args.hops,
-        max_svg=args.max_svg,
-    )
-    node_msg = f"{result['nodes']} nodes, {result['edges']} edges"
-    if result.get("fog_tour_nodes"):
-        node_msg += (
-            f" (fog: {result['fog_tour_nodes']} tour, "
-            f"~{result['fog_near']} near, ~{result['fog_far']} in fog)"
+    # Generate visualization (all active tours)
+    if not args.no_viz:
+        active_tours_list = session._get_tour_store().list_tours(status="active")
+        tour_ids = [t.id for t in active_tours_list] if active_tours_list else [tour.id]
+        result = session.visualize(
+            tour_ids=tour_ids, output=args.output,
+            max_neighborhood_hops=args.hops,
+            max_svg=args.max_svg,
         )
-    print(f"  HTML: {result['html']}  ({node_msg})")
-    if result.get("md"):
-        print(f"  Report: {result['md']}")
+        node_msg = f"{result['nodes']} nodes, {result['edges']} edges"
+        if result.get("fog_tour_nodes"):
+            node_msg += (
+                f" (fog: {result['fog_tour_nodes']} tour, "
+                f"~{result['fog_near']} near, ~{result['fog_far']} in fog)"
+            )
+        print(f"  HTML: {result['html']}  ({node_msg})")
+        if result.get("md"):
+            print(f"  Report: {result['md']}")
 
 
 def _run_blast_radius(args):

@@ -211,6 +211,74 @@ class HypergraphSession:
         ]
         return scaffold_prompt(plan, existing_tour_names=existing)
 
+    def annotate_tour(
+        self,
+        tour_id: str,
+        *,
+        finding: str | None = None,
+        status: str | None = None,
+        tags: list[str] | None = None,
+    ) -> dict | None:
+        """Update a tour's finding, status, or tags."""
+        store = self._get_tour_store()
+        tour = store.get(tour_id)
+        if tour is None:
+            return None
+        if finding is not None:
+            tour.finding = finding
+        if status is not None:
+            store.set_status(tour_id, status)
+        if tags:
+            tour.tags.extend(tags)
+            store.save()
+        return tour.to_dict()
+
+    def export_tours(
+        self,
+        *,
+        tour_ids: list[str] | None = None,
+        status: str | None = None,
+    ) -> dict:
+        """Export tours as a standalone dict (ready for JSON serialization)."""
+        from datetime import datetime, timezone
+
+        store = self._get_tour_store()
+        if tour_ids:
+            tours = [store.get(tid) for tid in tour_ids]
+            tours = [t for t in tours if t is not None]
+        elif status:
+            tours = store.list_tours(status=status)
+        else:
+            tours = store.list_tours()
+
+        return {
+            "version": 1,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "source_cache_dir": str(self._cache_dir) if self._cache_dir else "",
+            "tours": [t.to_dict() for t in tours],
+        }
+
+    def import_tours(
+        self,
+        data: dict,
+        *,
+        overwrite: bool = False,
+    ) -> dict:
+        """Import tours from an export dict. Returns counts."""
+        store = self._get_tour_store()
+        imported = 0
+        skipped = 0
+        for td in data.get("tours", []):
+            tour = MemoryTour.from_dict(td)
+            existing = store.get(tour.id)
+            if existing and not overwrite:
+                skipped += 1
+                continue
+            store._tours[tour.id] = tour
+            imported += 1
+        store.save()
+        return {"imported": imported, "skipped": skipped}
+
     # ---- Analyze (general-purpose tour-guided analysis) --------------------
 
     def analyze(

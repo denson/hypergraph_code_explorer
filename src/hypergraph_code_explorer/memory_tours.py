@@ -76,6 +76,13 @@ class MemoryTour:
     created_at: str = ""
     promoted: bool = False
 
+    # Status and metadata
+    status: str = "active"          # "active" | "empty" | "weak" | "hidden"
+    strategy: str = ""              # Primary strategy used (blast-radius, etc.)
+    finding: str = ""               # Agent's interpretation of results
+    parent_tour_id: str = ""        # If follow-up, which tour prompted it
+    step_count: int = 0             # len(steps) at creation time
+
     # Reuse tracking
     last_used_at: str = ""
     use_count: int = 0
@@ -102,6 +109,11 @@ class MemoryTour:
             "created_from_query": self.created_from_query,
             "created_at": self.created_at,
             "promoted": self.promoted,
+            "status": self.status,
+            "strategy": self.strategy,
+            "finding": self.finding,
+            "parent_tour_id": self.parent_tour_id,
+            "step_count": self.step_count,
             "last_used_at": self.last_used_at,
             "use_count": self.use_count,
         }
@@ -118,6 +130,11 @@ class MemoryTour:
             created_from_query=d.get("created_from_query", ""),
             created_at=d.get("created_at", ""),
             promoted=d.get("promoted", False),
+            status=d.get("status", "active"),
+            strategy=d.get("strategy", ""),
+            finding=d.get("finding", ""),
+            parent_tour_id=d.get("parent_tour_id", ""),
+            step_count=d.get("step_count", 0),
             last_used_at=d.get("last_used_at", ""),
             use_count=d.get("use_count", 0),
         )
@@ -177,13 +194,36 @@ class MemoryTourStore:
         *,
         tag: str | None = None,
         promoted_only: bool = False,
+        status: str | None = None,
+        exclude_status: list[str] | None = None,
     ) -> list[MemoryTour]:
         tours = list(self._tours.values())
         if tag:
             tours = [t for t in tours if tag in t.tags]
         if promoted_only:
             tours = [t for t in tours if t.promoted]
+        if status:
+            tours = [t for t in tours if t.status == status]
+        if exclude_status:
+            exclude = set(exclude_status)
+            tours = [t for t in tours if t.status not in exclude]
         return sorted(tours, key=lambda t: t.created_at, reverse=True)
+
+    def set_status(self, tour_id: str, status: str) -> MemoryTour | None:
+        """Update a tour's status. Valid: active, empty, weak, hidden."""
+        valid = {"active", "empty", "weak", "hidden"}
+        if status not in valid:
+            raise ValueError(f"Invalid status '{status}'. Must be one of: {valid}")
+        tour = self._tours.get(tour_id)
+        if tour:
+            tour.status = status
+            self.save()
+        return tour
+
+    def clear(self) -> None:
+        """Remove all tours."""
+        self._tours.clear()
+        self.save()
 
     def remove(self, tour_id: str) -> bool:
         if tour_id in self._tours:

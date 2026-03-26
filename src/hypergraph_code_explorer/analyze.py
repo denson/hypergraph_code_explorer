@@ -539,6 +539,9 @@ def analyze(
             steps=[],
             tags=strategies + (tags or []),
             created_from_query=question,
+            status="empty",
+            strategy=strategies[0] if strategies else "exploration",
+            step_count=0,
         )
         store = session._get_tour_store()
         store.add(tour)
@@ -549,6 +552,14 @@ def analyze(
         max_tour_steps=max_tour_steps,
         tags=tags,
     )
+
+    # Set metadata
+    tour.strategy = strategies[0] if strategies else "exploration"
+    tour.step_count = len(tour.steps)
+
+    # Auto-detect weak results
+    if len(tour.steps) <= 3:
+        tour.status = "weak"
 
     # Persist
     store = session._get_tour_store()
