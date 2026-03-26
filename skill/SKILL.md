@@ -1,15 +1,44 @@
 ---
-name: hce-visualize
+name: hce
 description: >
-  Index any multi-language codebase into a hypergraph and create an interactive D3.js
-  visualization using HCE. Triggers: "visualize this codebase", "show me the architecture",
-  "graph this repo", "map dependencies", "explore codebase visually", "install HCE",
-  or mentions of "hypergraph", "code graph", "HCE", "D3 visualization".
+  Index any multi-language codebase into a hypergraph for structural analysis and
+  interactive visualization using HCE. Use this skill whenever the user wants to:
+  (1) visualize or map a codebase's architecture,
+  (2) investigate a question about a codebase ("what would break if I changed X",
+      "how does Y work", "what calls Z", "class hierarchy of W"),
+  (3) do impact/blast-radius analysis,
+  (4) trace dependencies, inheritance, or error handling patterns,
+  (5) install or set up HCE.
+  Triggers: "visualize this codebase", "show me the architecture", "graph this repo",
+  "map dependencies", "explore codebase visually", "what would break if I changed",
+  "how does X work in the code", "trace callers of", "class hierarchy",
+  "blast radius", "investigate", "analyze this code", "install HCE",
+  or any mention of "hypergraph", "code graph", "HCE", "D3 visualization".
+  Use this skill even when the user asks a structural question about code without
+  mentioning HCE — if there's an indexed codebase available, this skill can answer it.
 ---
 
 # HCE — Hypergraph Code Explorer
 
-HCE indexes a codebase into a hypergraph and lets you query or visualize its structure. It supports Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, and PHP — including mixed-language projects. This skill covers the full lifecycle: installation, indexing, querying, and interactive visualization.
+HCE indexes a codebase into a hypergraph and lets you query or visualize its structure. It supports Python, JavaScript, TypeScript, Go, Rust, Java, C, C++, Ruby, and PHP — including mixed-language projects. This skill covers the full lifecycle: installation, indexing, querying, investigation, and interactive visualization.
+
+## Which workflow?
+
+This skill supports two primary workflows. Read the user's request and pick the right one:
+
+- **"Visualize / map / explore this codebase"** → You want the visualization workflow.
+  Read this entire file. It covers extraction, tour design, and D3.js visualization.
+
+- **"How does X work?", "What would break if...", "What calls Y?", "Trace Z"** → You want
+  the investigation workflow. Read `references/investigator.md` — it has the full methodology
+  for decomposing questions into HCE queries, evaluating results, filtering noise, and
+  synthesizing evidence-backed answers with memory tours.
+
+- **"Install HCE" / "Index this repo"** → Read `references/quickstart.md` only.
+
+If you're unsure, default to investigation for questions and visualization for exploration requests.
+The two workflows share the same index — you can investigate a codebase and then visualize your
+findings, or start with a visualization and drill into specific questions.
 
 ## Default behavior — auto-visualize
 
@@ -246,6 +275,24 @@ The bundled template handles all the visualization mechanics. You don't need to 
 - 900+ nodes / 1600+ edges renders smoothly
 - The template uses a single `<g>` container with zoom applied once (never per-element transforms)
 - For graphs > 3000 nodes, SVG blur filters may get expensive — consider customizing the template to disable cloud blur
+
+## Investigation mode
+
+If the user is asking questions about a codebase rather than requesting a visualization,
+switch to the investigation workflow described in `references/investigator.md`. That document
+covers the full methodology: how to decompose questions into targeted HCE queries, how to
+evaluate and filter results, how to accumulate memory tours across multiple queries, and how
+to synthesize findings into an evidence-backed answer.
+
+Key differences from the visualization workflow:
+- You run multiple targeted queries (not one big extraction)
+- Each query produces a memory tour that accumulates in `memory_tours.json`
+- You evaluate results after each query and filter noise before continuing
+- The visualization renders all active tours at the end (not a full-graph overview)
+- The primary deliverable is an answer with evidence, not a visualization
+
+The visualization is still produced — it becomes a navigable evidence board showing all
+the tours that support your answer. But the answer comes first.
 
 ## Phase 5: Save and present
 

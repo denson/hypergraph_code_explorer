@@ -92,6 +92,31 @@ hce query "how does request validation work"
 hce query "what middleware handles CORS"
 ```
 
+### Investigate a question (multi-query analysis)
+```bash
+hce analyze "what would break if I changed BaseEstimator.get_params"
+hce analyze "how does random forest handle missing values"
+```
+
+Each `hce analyze` call classifies your question, runs multiple structural queries, and
+builds a memory tour from the results. Tours accumulate across calls — run several to
+build up evidence from different angles.
+
+### Manage memory tours
+```bash
+hce tour list                                    # see all tours
+hce tour show <id>                               # inspect a specific tour
+hce tour annotate <id> --status weak --finding "Only text matches, no structural edges"
+hce tour export --all --output investigation.json # save for later
+hce tour import investigation.json               # resume a previous investigation
+```
+
+Tour status values: `active` (shown in visualization), `empty` (no results),
+`weak` (low quality), `hidden` (excluded). Only `active` tours render in the visualization.
+
+Note: `tour annotate`, `tour export`, and `tour import` are planned but may not be
+implemented yet. See TASK_MEMORY_TRACE_WORKFLOW.md for the target API.
+
 ### Codebase overview
 ```bash
 hce overview --top 20
