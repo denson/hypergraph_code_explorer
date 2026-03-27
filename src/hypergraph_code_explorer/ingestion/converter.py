@@ -29,8 +29,8 @@ class ConvertedDocument:
 # ---------------------------------------------------------------------------
 
 CODE_EXTENSIONS = {
-    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cs", ".cpp", ".c",
-    ".h", ".hpp", ".go", ".rs", ".rb", ".php", ".swift", ".kt", ".scala",
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cs", ".cpp", ".cc", ".cxx", ".c",
+    ".h", ".hpp", ".hxx", ".go", ".rs", ".rb", ".php", ".swift", ".kt", ".scala",
     ".sh", ".bash", ".r", ".m", ".lua", ".zig",
 }
 

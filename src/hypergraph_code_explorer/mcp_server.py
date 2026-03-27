@@ -163,7 +163,7 @@ def create_server():
             f for f in source_dir.rglob("*")
             if f.is_file() and f.suffix in (
                 ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs",
-                ".java", ".c", ".cpp", ".h", ".hpp", ".rb", ".php",
+                ".java", ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx", ".rb", ".php",
             )
         ]
         msg = [f"Indexing {len(source_files)} source files in {source_dir.name}/..."]

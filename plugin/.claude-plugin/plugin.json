@@ -1,6 +1,6 @@
 {
   "name": "hce",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "Hypergraph Code Explorer — index any codebase into a hypergraph and query its structure via MCP tools",
   "author": {
     "name": "Denson Smith"

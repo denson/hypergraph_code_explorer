@@ -106,6 +106,10 @@ The plugin gives Claude six MCP tools for querying the code graph:
 
 The visualization includes search, guided tours with click-to-spotlight, a "Suggest Tours" button for discovering more areas to explore, and a "Copy Prompt for Claude" button that lets you ask Claude for additional tours.
 
+### Interactive exploration
+
+Once HCE is installed (via plugin or CLI), you can explore any indexed codebase interactively — just ask Claude questions in natural language and it uses the structural graph to answer them. See the **[Interactive Exploration Tutorial](docs/tutorial-interactive-exploration.md)** for example questions and a walkthrough.
+
 ---
 
 ## For Developers
