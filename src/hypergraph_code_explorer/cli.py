@@ -109,6 +109,8 @@ def main():
     overview_p.add_argument("--top", type=int, default=10,
         help="How many hub symbols to show (default: 10). Hub nodes have the largest blast radius")
     overview_p.add_argument("--json", action="store_true", dest="json_output")
+    overview_p.add_argument("--no-tests", action="store_true",
+        help="Filter out test/benchmark/example file symbols from hub list")
     overview_p.add_argument("--cache-dir", type=str, default=None)
     overview_p.add_argument("--verbose", "-v", action="store_true")
 
@@ -299,6 +301,8 @@ def main():
         help="Max SVG nodes in browser focus window (default: 500)")
     blast_p.add_argument("--output", "-o", type=str, default="blast_analysis",
         help="Output basename (default: blast_analysis)")
+    blast_p.add_argument("--no-tests", action="store_true",
+        help="Filter out test/benchmark/example file references from results")
     blast_p.add_argument("--cache-dir", type=str, default=None)
     blast_p.add_argument("--verbose", "-v", action="store_true")
 
@@ -678,26 +682,47 @@ def _run_overview(args):
 
     from .retrieval.plan import Overview
 
+    # Optional test file filter
+    test_filter = None
+    if getattr(args, "no_tests", False):
+        from .filters import is_test_file
+        test_filter = is_test_file
+
     # Gather modules (unique source_paths)
     modules: list[dict] = []
     all_paths: set[str] = set()
     for rec in builder._edge_store.values():
         if rec.source_path:
+            if test_filter and test_filter(rec.source_path):
+                continue
             all_paths.add(rec.source_path)
 
     for path in sorted(all_paths):
         modules.append({"path": path})
 
-    # Key symbols by degree
+    # Key symbols by degree (optionally filtering test-file edges)
+    node_degrees: dict[str, int] = {}
+    for node, edge_ids in builder._node_to_edges.items():
+        if test_filter:
+            count = 0
+            for eid in edge_ids:
+                rec = builder._edge_store.get(eid)
+                if rec and rec.source_path and test_filter(rec.source_path):
+                    continue
+                count += 1
+            node_degrees[node] = count
+        else:
+            node_degrees[node] = len(edge_ids)
+
     key_symbols: list[dict] = []
-    for node, edge_ids in sorted(
-        builder._node_to_edges.items(),
-        key=lambda x: len(x[1]),
+    for node, degree in sorted(
+        node_degrees.items(),
+        key=lambda x: x[1],
         reverse=True,
     )[:args.top]:
         key_symbols.append({
             "name": node,
-            "degree": len(edge_ids),
+            "degree": degree,
         })
 
     overview = Overview(
@@ -1144,23 +1169,33 @@ def _run_blast_radius(args):
         task_description=args.task,
     )
 
+    # Optionally filter test file steps
+    display_steps = tour.steps
+    test_filtered = 0
+    if getattr(args, "no_tests", False):
+        from .filters import is_test_file
+        display_steps = [s for s in tour.steps if not (s.file and is_test_file(s.file))]
+        test_filtered = len(tour.steps) - len(display_steps)
+
     # Structured summary
     print(f'\nBlast radius: "{args.symbol}"')
     print(f'  Strategy: {tour.strategy} | Seed terms: {", ".join(tour.keywords)}')
-    files_touched = len({s.file for s in tour.steps if s.file})
-    print(f'  Tour: "{tour.name}" ({len(tour.steps)} steps, {files_touched} files)')
+    files_touched = len({s.file for s in display_steps if s.file})
+    print(f'  Tour: "{tour.name}" ({len(display_steps)} steps, {files_touched} files)')
+    if test_filtered > 0:
+        print(f'  (filtered {test_filtered} test file references, use without --no-tests to include)')
     print(f'  ID: {tour.id}')
 
     # Top steps
-    if tour.steps:
+    if display_steps:
         print('\n  Top steps:')
-        for i, step in enumerate(tour.steps[:10], 1):
+        for i, step in enumerate(display_steps[:10], 1):
             edge = str(step.edge_type).replace("EdgeType.", "") if step.edge_type else ""
             fname = Path(step.file).name if step.file else ""
             label = f"[{edge}] " if edge else ""
             target = f" -> {fname}" if fname else ""
             print(f'    {i}. {step.node} {label}{target}')
-        remaining = len(tour.steps) - 10
+        remaining = len(display_steps) - 10
         if remaining > 0:
             print(f'    ... ({remaining} more)')
 
